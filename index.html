@@ -1,1 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diamond Desk · MLB Sport Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0B1220; --panel:#121C2F; --panelAlt:#182640; --line:#2A3A54;
+    --chalk:#F3F1EA; --dim:#9FAEC4; --amber:#FFB627; --grass:#3C6E47;
+    --dirt:#C9A87C; --red:#E4573D;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--chalk);
+    font-family:Inter,system-ui,sans-serif; padding:1.25rem;
+  }
+  .kicker { color:var(--amber); font-family:Oswald,sans-serif; font-size:.72rem; letter-spacing:.15em; }
+  h1 { font-family:Oswald,sans-serif; font-size:2rem; font-weight:700; margin:.2rem 0 1.2rem; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .status { display:flex; align-items:center; gap:.5rem; padding:1rem; font-size:.85rem; color:var(--dim); }
+  .dot { width:9px; height:9px; border-radius:99px; background:var(--dim); flex:none; }
+  .dot.live { background:var(--grass); }
+  .dot.err { background:var(--red); }
+  .section-title { font-family:Oswald,sans-serif; padding:1rem; border-bottom:1px solid var(--line); font-size:.95rem; }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  th { text-align:left; padding:.5rem .9rem; color:var(--dim); font-size:.66rem; letter-spacing:.05em; font-weight:600; }
+  td { padding:.6rem .9rem; }
+  tr:nth-child(even) td { background:var(--panelAlt); }
+  .mono { font-family:ui-monospace,Menlo,monospace; }
+  .best { color:var(--amber); font-weight:600; }
+  .wrap { overflow-x:auto; }
+  .div-label { color:var(--dirt); font-family:Oswald,sans-serif; font-size:.8rem; letter-spacing:.08em; margin:1.5rem 0 .6rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:.7rem; }
+  .team { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:.9rem; }
+  .team-name { font-family:Oswald,sans-serif; font-weight:600; }
+  .badge { background:var(--amber); color:var(--bg); border-radius:4px; padding:.05rem .4rem; font-size:.7rem; font-weight:600; }
+  .row { display:flex; justify-content:space-between; align-items:center; }
+  .rec { color:var(--amber); font-family:Oswald,sans-serif; }
+  .form { display:flex; gap:.4rem; margin-top:.5rem; }
+  .pill { width:20px; height:20px; border-radius:4px; display:flex; align-items:center;
+          justify-content:center; font-size:10px; font-weight:700; }
+  .w { background:var(--grass); } .l { background:var(--red); }
+  .note { color:var(--dim); font-size:.78rem; margin-top:1.5rem; line-height:1.5; }
+</style>
+</head>
+<body>
 
+<div class="kicker">DIAMOND DESK · MLB</div>
+<h1>Sport Analyzer</h1>
+
+<div class="card" style="margin-bottom:1.2rem">
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">Loading live odds…</span></div>
+</div>
+
+<div class="card" id="liveCard" style="display:none;margin-bottom:1.2rem">
+  <div class="section-title">UPCOMING GAMES — DRAFTKINGS vs FANDUEL</div>
+  <div class="wrap">
+    <table>
+      <thead><tr>
+        <th>MATCHUP</th><th>START</th><th>DK MONEYLINE</th><th>FD MONEYLINE</th><th>TOTAL</th>
+      </tr></thead>
+      <tbody id="liveBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="teams"></div>
+
+<p class="note">
+  Live odds come from DraftKings and FanDuel via The Odds API. Team records below are sample
+  data — swap in the MLB Stats API for real results. Best available moneyline is highlighted
+  in amber. Odds move constantly; the number you see may not be the number you get.
+</p>
+
+<script>
+const DIVISIONS = [
+  ["AL East", [["NYY","New York Yankees"],["BOS","Boston Red Sox"],["TOR","Toronto Blue Jays"],["TB","Tampa Bay Rays"],["BAL","Baltimore Orioles"]]],
+  ["AL Central", [["CLE","Cleveland Guardians"],["MIN","Minnesota Twins"],["CWS","Chicago White Sox"],["DET","Detroit Tigers"],["KC","Kansas City Royals"]]],
+  ["AL West", [["HOU","Houston Astros"],["SEA","Seattle Mariners"],["TEX","Texas Rangers"],["LAA","Los Angeles Angels"],["ATH","Athletics"]]],
+  ["NL East", [["ATL","Atlanta Braves"],["NYM","New York Mets"],["PHI","Philadelphia Phillies"],["MIA","Miami Marlins"],["WSH","Washington Nationals"]]],
+  ["NL Central", [["MIL","Milwaukee Brewers"],["CHC","Chicago Cubs"],["STL","St. Louis Cardinals"],["CIN","Cincinnati Reds"],["PIT","Pittsburgh Pirates"]]],
+  ["NL West", [["LAD","Los Angeles Dodgers"],["SD","San Diego Padres"],["SF","San Francisco Giants"],["ARI","Arizona Diamondbacks"],["COL","Colorado Rockies"]]]
+];
+
+function seeded(s){ s=s%2147483647; if(s<=0)s+=2147483646;
+  return ()=>{ s=(s*16807)%2147483647; return (s-1)/2147483646; }; }
+function hash(str){ let h=0; for(let i=0;i<str.length;i++) h=(Math.imul(31,h)+str.charCodeAt(i))|0; return Math.abs(h)||1; }
+
+function record(abbr){
+  const r=seeded(hash(abbr)+50); let w=0; const form=[];
+  for(let i=0;i<50;i++){ const win=r()>0.48; if(win)w++; if(i>=45)form.push(win); }
+  return {w,l:50-w,form};
+}
+
+function fmt(n){ return n==null ? "—" : (n>0 ? "+"+n : ""+n); }
+
+// ---- render team grid ----
+const teamsEl = document.getElementById("teams");
+DIVISIONS.forEach(([div, teams])=>{
+  const label=document.createElement("div");
+  label.className="div-label"; label.textContent=div.toUpperCase();
+  teamsEl.appendChild(label);
+  const grid=document.createElement("div"); grid.className="grid";
+  teams.forEach(([abbr,name])=>{
+    const {w,l,form}=record(abbr);
+    const el=document.createElement("div"); el.className="team";
+    el.innerHTML=`
+      <div class="row"><span class="team-name">${name}</span><span class="badge">${abbr}</span></div>
+      <div class="row" style="margin-top:.4rem">
+        <span style="color:var(--dim);font-size:.78rem">last 50</span>
+        <span class="rec">${w}-${l}</span>
+      </div>
+      <div class="form">${form.map(v=>`<span class="pill ${v?'w':'l'}">${v?'W':'L'}</span>`).join("")}</div>`;
+    grid.appendChild(el);
+  });
+  teamsEl.appendChild(grid);
+});
+
+// ---- load live odds from our own /api/odds ----
+async function load(){
+  const dot=document.getElementById("dot");
+  const txt=document.getElementById("statusText");
+  try {
+    const res = await fetch("/api/odds");
+    const data = await res.json();
+    if(!res.ok){ throw new Error(data.error || "Feed error"); }
+
+    const body=document.getElementById("liveBody");
+    body.innerHTML="";
+
+    data.games.forEach(g=>{
+      const dk=g.books?.draftkings, fd=g.books?.fanduel;
+      const tot=dk?.total?.Over || fd?.total?.Over;
+
+      // highlight whichever book pays more on the away side
+      const dkA=dk?.moneyline?.[g.awayTeam], fdA=fd?.moneyline?.[g.awayTeam];
+      const dkBest = dkA!=null && fdA!=null && dkA>fdA;
+      const fdBest = dkA!=null && fdA!=null && fdA>dkA;
+
+      const tr=document.createElement("tr");
+      tr.innerHTML=`
+        <td>${g.awayTeam} @ ${g.homeTeam}</td>
+        <td style="color:var(--dim)">${new Date(g.startTime).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</td>
+        <td class="mono ${dkBest?'best':''}">${dk?fmt(dk.moneyline[g.awayTeam])+" / "+fmt(dk.moneyline[g.homeTeam]):"—"}</td>
+        <td class="mono ${fdBest?'best':''}">${fd?fmt(fd.moneyline[g.awayTeam])+" / "+fmt(fd.moneyline[g.homeTeam]):"—"}</td>
+        <td class="mono">${tot?tot.line+" ("+fmt(tot.odds)+")":"—"}</td>`;
+      body.appendChild(tr);
+    });
+
+    document.getElementById("liveCard").style.display="block";
+    dot.className="dot live";
+    txt.textContent=`Live — ${data.games.length} upcoming games · ${data.requestsRemaining} requests left this month · updated ${new Date(data.updatedAt).toLocaleTimeString()}`;
+  } catch(err){
+    dot.className="dot err";
+    txt.textContent="Couldn't load odds: "+err.message;
+  }
+}
+load();
+</script>
+</body>
+</html>
