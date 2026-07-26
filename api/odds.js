@@ -86,7 +86,7 @@ export default async function handler(req, res) {
 
     // Tell browsers to reuse this answer for 60 seconds.
     // This protects your monthly request quota.
-    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
+   res.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=3600");
 
     // How many requests you have left this month.
     const remaining = response.headers.get("x-requests-remaining");
