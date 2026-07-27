@@ -50,14 +50,12 @@
   .stat-value { font-family:Oswald,sans-serif; font-size:1.4rem; color:var(--amber); }
   .hidden { display:none; }
 
-  /* tabs */
   .tabs { display:flex; gap:.5rem; margin-bottom:1rem; }
   .tab { background:var(--panel); border:1px solid var(--line); color:var(--dim);
          padding:.55rem 1rem; border-radius:8px; font-family:Oswald,sans-serif;
          font-size:.85rem; cursor:pointer; }
   .tab.on { background:var(--amber); color:var(--bg); border-color:var(--amber); }
 
-  /* controls */
   .controls { display:flex; flex-wrap:wrap; gap:.6rem; padding:1rem; align-items:flex-end; }
   .field { display:flex; flex-direction:column; gap:.25rem; }
   .field label { color:var(--dim); font-size:.64rem; letter-spacing:.06em; }
@@ -65,7 +63,6 @@
                   border-radius:6px; padding:.5rem .6rem; font-family:inherit; font-size:.85rem; }
   input[type=number] { width:90px; }
 
-  /* hit rate cards */
   .rates { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.7rem; margin:1rem 0; }
   .rate { border-radius:8px; padding:.8rem; border:1px solid var(--line); background:var(--panel); }
   .rate-label { color:var(--dim); font-size:.64rem; letter-spacing:.06em; }
@@ -73,12 +70,17 @@
   .rate-sub { color:var(--dim); font-size:.7rem; }
   .hot { color:var(--grass); } .cold { color:var(--red); } .mid { color:var(--amber); }
 
-  /* bar chart */
   .bars { display:flex; align-items:flex-end; gap:3px; height:110px; padding:1rem; }
-  .bar { flex:1; min-width:5px; border-radius:2px 2px 0 0; background:var(--line); position:relative; }
+  .bar { flex:1; min-width:5px; border-radius:2px 2px 0 0; background:var(--line); }
   .bar.over { background:var(--grass); } .bar.under { background:var(--red); }
-  .lineMark { border-top:1px dashed var(--amber); position:relative; margin:0 1rem;
+  .lineMark { border-top:1px dashed var(--amber); margin:0 1rem;
               color:var(--amber); font-size:.65rem; padding-top:2px; }
+
+  .soft { color:var(--grass); font-weight:600; }
+  .tough { color:var(--red); font-weight:600; }
+  .neutralM { color:var(--dim); }
+  .callout { padding:.9rem 1rem; font-size:.82rem; line-height:1.5; border-top:1px solid var(--line); color:var(--dim); }
+  .callout strong { color:var(--chalk); }
 </style>
 </head>
 <body>
@@ -93,7 +95,6 @@
 
 <!-- ============ GAMES & ODDS ============ -->
 <div id="viewGames">
-
   <div class="card" style="margin-bottom:1rem">
     <div class="status"><span class="dot" id="gamesDot"></span><span id="gamesText">Loading results…</span></div>
     <div class="status" style="border-top:1px solid var(--line)"><span class="dot" id="oddsDot"></span><span id="oddsText">Loading odds…</span></div>
@@ -120,46 +121,35 @@
 
 <!-- ============ PLAYER PROPS ============ -->
 <div id="viewProps" class="hidden">
-
   <div class="card" style="margin-bottom:1rem">
     <div class="section-title">FIND A PLAYER</div>
     <div class="controls">
-      <div class="field">
-        <label>TEAM</label>
-        <select id="teamPick"></select>
-      </div>
-      <div class="field">
-        <label>PLAYER</label>
-        <select id="playerPick"><option value="">— pick a team first —</option></select>
-      </div>
-      <div class="field">
-        <label>STAT</label>
-        <select id="statPick"></select>
-      </div>
-      <div class="field">
-        <label>PROP LINE</label>
-        <input type="number" id="linePick" value="1.5" step="0.5" min="0">
-      </div>
+      <div class="field"><label>TEAM</label><select id="teamPick"></select></div>
+      <div class="field"><label>PLAYER</label><select id="playerPick"><option value="">— pick a team first —</option></select></div>
+      <div class="field"><label>STAT</label><select id="statPick"></select></div>
+      <div class="field"><label>PROP LINE</label><input type="number" id="linePick" value="1.5" step="0.5" min="0"></div>
     </div>
     <div class="status" style="border-top:1px solid var(--line)">
       <span class="dot" id="propDot"></span><span id="propText">Pick a team to start.</span>
     </div>
+    <div class="status" style="border-top:1px solid var(--line)">
+      <span class="dot" id="ctxDot"></span><span id="ctxText">Loading opponent context…</span>
+    </div>
   </div>
-
   <div id="propResult"></div>
 </div>
 
 <p class="note">
-  Game results and player stats are real, from the official MLB Stats API. Live odds come
-  from DraftKings and FanDuel via The Odds API; the better available moneyline is highlighted
-  in amber. Hit rates are historical and describe what already happened — they are not
-  predictions, and past rates over small samples are noisy. Prop lines shown are whatever
-  you type in; check the actual line at your book before acting on anything here.
+  Game results, player stats and opponent profiles are real, from the official MLB Stats API.
+  Live odds come from DraftKings and FanDuel via The Odds API. Hit rates and matchup splits
+  are historical — they describe what already happened and are not predictions. Splits over
+  small samples are noisy; a 5-game rate is five coin flips. Prop lines are whatever you type
+  in; check the real line at your book before acting on anything here.
 </p>
 
 <script>
 /* ============ shared ============ */
-let TEAMS = null;
+let TEAMS=null, CONTEXT=null, CURRENT_LOG=null;
 const fmt = n => n==null ? "—" : (n>0 ? "+"+n : ""+n);
 
 const TEAM_LIST = [
@@ -175,40 +165,36 @@ const TEAM_LIST = [
   ["TEX","Texas Rangers"],["TOR","Toronto Blue Jays"],["WSH","Washington Nationals"]
 ];
 
-const HIT_STATS = [
-  ["hits","Hits"],["homeRuns","Home Runs"],["rbi","RBI"],["runs","Runs"],
+const HIT_STATS=[["hits","Hits"],["homeRuns","Home Runs"],["rbi","RBI"],["runs","Runs"],
   ["totalBases","Total Bases"],["strikeOuts","Strikeouts"],["baseOnBalls","Walks"],
-  ["stolenBases","Stolen Bases"],["doubles","Doubles"],["atBats","At Bats"]
-];
-const PITCH_STATS = [
-  ["strikeOuts","Strikeouts"],["inningsPitched","Innings Pitched"],["hits","Hits Allowed"],
-  ["earnedRuns","Earned Runs"],["baseOnBalls","Walks"],["numberOfPitches","Pitch Count"],
-  ["battersFaced","Batters Faced"]
-];
+  ["stolenBases","Stolen Bases"],["doubles","Doubles"],["atBats","At Bats"]];
+const PITCH_STATS=[["strikeOuts","Strikeouts"],["inningsPitched","Innings Pitched"],
+  ["hits","Hits Allowed"],["earnedRuns","Earned Runs"],["baseOnBalls","Walks"],
+  ["numberOfPitches","Pitch Count"],["battersFaced","Batters Faced"]];
 
 /* ============ tabs ============ */
 const tabGames=document.getElementById("tabGames"), tabProps=document.getElementById("tabProps");
-tabGames.onclick=()=>{ tabGames.classList.add("on"); tabProps.classList.remove("on");
+tabGames.onclick=()=>{tabGames.classList.add("on");tabProps.classList.remove("on");
   document.getElementById("viewGames").classList.remove("hidden");
-  document.getElementById("viewProps").classList.add("hidden"); };
-tabProps.onclick=()=>{ tabProps.classList.add("on"); tabGames.classList.remove("on");
+  document.getElementById("viewProps").classList.add("hidden");};
+tabProps.onclick=()=>{tabProps.classList.add("on");tabGames.classList.remove("on");
   document.getElementById("viewProps").classList.remove("hidden");
-  document.getElementById("viewGames").classList.add("hidden"); };
+  document.getElementById("viewGames").classList.add("hidden");};
 
 /* ============ team results ============ */
 async function loadGames(){
   const dot=document.getElementById("gamesDot"), txt=document.getElementById("gamesText");
-  try {
+  try{
     const res=await fetch("/api/games"); const data=await res.json();
     if(!res.ok) throw new Error(data.error||"Results error");
     TEAMS=data.teams; renderTeams();
-    dot.className="dot live"; txt.textContent=`Results live — ${data.teamCount} teams from the MLB Stats API`;
-  } catch(err){ dot.className="dot err"; txt.textContent="Couldn't load results: "+err.message; }
+    dot.className="dot live"; txt.textContent=`Results live — ${data.teamCount} teams`;
+  }catch(err){dot.className="dot err";txt.textContent="Couldn't load results: "+err.message;}
 }
 
 function renderTeams(){
   const wrap=document.getElementById("teams"); wrap.innerHTML="";
-  const divs={}; Object.values(TEAMS).forEach(t=>{ (divs[t.division]=divs[t.division]||[]).push(t); });
+  const divs={}; Object.values(TEAMS).forEach(t=>{(divs[t.division]=divs[t.division]||[]).push(t);});
   const order=["American League East","American League Central","American League West",
                "National League East","National League Central","National League West"];
   Object.keys(divs).sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);
@@ -218,8 +204,7 @@ function renderTeams(){
     const grid=document.createElement("div"); grid.className="grid";
     divs[div].sort((a,b)=>b.winPct-a.winPct).forEach(t=>{
       const el=document.createElement("div"); el.className="team";
-      el.innerHTML=`
-        <div class="row"><span class="team-name">${t.name}</span><span class="badge">${t.abbr}</span></div>
+      el.innerHTML=`<div class="row"><span class="team-name">${t.name}</span><span class="badge">${t.abbr}</span></div>
         <div class="row" style="margin-top:.4rem">
           <span style="color:var(--dim);font-size:.76rem">last ${t.gamesCounted} · ${t.streak}</span>
           <span class="rec">${t.wins}-${t.losses}</span></div>
@@ -254,20 +239,18 @@ function showTeam(abbr){
           <td class="mono">${g.runsFor}-${g.runsAgainst}</td>
           <td><span class="pill ${g.win?'w':'l'}" style="display:inline-flex">${g.win?'W':'L'}</span></td>
           <td class="mono" style="color:${g.runsFor-g.runsAgainst>0?'var(--grass)':'var(--red)'}">${g.runsFor-g.runsAgainst>0?"+":""}${g.runsFor-g.runsAgainst}</td>
-        </tr>`).join("")}</tbody>
-      </table></div></div>`;
+        </tr>`).join("")}</tbody></table></div></div>`;
   document.getElementById("listView").classList.add("hidden");
-  document.getElementById("detailView").classList.remove("hidden");
-  window.scrollTo(0,0);
+  document.getElementById("detailView").classList.remove("hidden"); window.scrollTo(0,0);
 }
 document.getElementById("backBtn").onclick=()=>{
   document.getElementById("detailView").classList.add("hidden");
-  document.getElementById("listView").classList.remove("hidden"); window.scrollTo(0,0); };
+  document.getElementById("listView").classList.remove("hidden"); window.scrollTo(0,0);};
 
 /* ============ odds ============ */
 async function loadOdds(){
   const dot=document.getElementById("oddsDot"), txt=document.getElementById("oddsText");
-  try {
+  try{
     const res=await fetch("/api/odds"); const data=await res.json();
     if(!res.ok) throw new Error(data.error||"Feed error");
     const body=document.getElementById("liveBody"); body.innerHTML="";
@@ -276,8 +259,7 @@ async function loadOdds(){
       const tot=dk?.total?.Over||fd?.total?.Over;
       const dkA=dk?.moneyline?.[g.awayTeam], fdA=fd?.moneyline?.[g.awayTeam];
       const tr=document.createElement("tr");
-      tr.innerHTML=`
-        <td>${g.awayTeam} @ ${g.homeTeam}</td>
+      tr.innerHTML=`<td>${g.awayTeam} @ ${g.homeTeam}</td>
         <td style="color:var(--dim)">${new Date(g.startTime).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</td>
         <td class="mono ${dkA!=null&&fdA!=null&&dkA>fdA?'best':''}">${dk?fmt(dk.moneyline[g.awayTeam])+" / "+fmt(dk.moneyline[g.homeTeam]):"—"}</td>
         <td class="mono ${dkA!=null&&fdA!=null&&fdA>dkA?'best':''}">${fd?fmt(fd.moneyline[g.awayTeam])+" / "+fmt(fd.moneyline[g.homeTeam]):"—"}</td>
@@ -286,13 +268,45 @@ async function loadOdds(){
     });
     document.getElementById("liveCard").style.display="block";
     dot.className="dot live";
-    txt.textContent=`Odds live — ${data.games.length} upcoming games · ${data.requestsRemaining} requests left this month`;
-  } catch(err){ dot.className="dot err"; txt.textContent="Couldn't load odds: "+err.message; }
+    txt.textContent=`Odds live — ${data.games.length} games · ${data.requestsRemaining} requests left`;
+  }catch(err){dot.className="dot err";txt.textContent="Couldn't load odds: "+err.message;}
+}
+
+/* ============ opponent context ============ */
+async function loadContext(){
+  const dot=document.getElementById("ctxDot"), txt=document.getElementById("ctxText");
+  try{
+    const res=await fetch("/api/context"); const data=await res.json();
+    if(!res.ok) throw new Error(data.error||"Context error");
+    CONTEXT=data;
+    dot.className="dot live";
+    txt.textContent=`Opponent context — ${data.teamCount} teams · league avg K-rate ${(data.leagueAvg.kRate*100).toFixed(1)}% · ERA ${data.leagueAvg.era}`;
+    if(CURRENT_LOG) renderProp();
+  }catch(err){dot.className="dot err";txt.textContent="Couldn't load context: "+err.message;}
+}
+
+// How favourable was this matchup for the player?
+// Pitchers: facing a strikeout-prone lineup is soft (kRateRank 1 = most K-prone).
+// Batters:  facing a weak staff is soft (eraRank 30 = worst ERA).
+function matchupFor(opponentName, group){
+  if(!CONTEXT) return null;
+  const t=CONTEXT.teams?.[opponentName];
+  if(!t) return null;
+  if(group==="pitching"){
+    const r=t.hitting?.kRateRank;
+    if(!r) return null;
+    return { rank:r, label:`K-rate #${r}`,
+             detail:`${(t.hitting.kRate*100).toFixed(1)}% strikeout rate`,
+             tier: r<=10?"soft" : r>=21?"tough" : "neutral" };
+  }
+  const r=t.pitching?.eraRank;
+  if(!r) return null;
+  return { rank:r, label:`ERA #${r}`,
+           detail:`${t.pitching.era} team ERA`,
+           tier: r>=21?"soft" : r<=10?"tough" : "neutral" };
 }
 
 /* ============ player props ============ */
-let CURRENT_LOG = null;
-
 const teamPick=document.getElementById("teamPick");
 const playerPick=document.getElementById("playerPick");
 const statPick=document.getElementById("statPick");
@@ -312,91 +326,110 @@ function propStatus(kind,msg){
   document.getElementById("propText").textContent=msg;
 }
 
-teamPick.onchange=async ()=>{
+teamPick.onchange=async()=>{
   const abbr=teamPick.value;
-  document.getElementById("propResult").innerHTML="";
-  if(!abbr){ playerPick.innerHTML=`<option value="">— pick a team first —</option>`; return; }
+  document.getElementById("propResult").innerHTML=""; CURRENT_LOG=null;
+  if(!abbr){playerPick.innerHTML=`<option value="">— pick a team first —</option>`;return;}
   propStatus("","Loading roster…");
-  try {
-    const res=await fetch(`/api/player?team=${abbr}`);
-    const data=await res.json();
+  try{
+    const res=await fetch(`/api/player?team=${abbr}`); const data=await res.json();
     if(!res.ok) throw new Error(data.error||"Roster error");
     const opts=[`<option value="">— choose a player —</option>`];
-    if(data.batters?.length){
-      opts.push(`<optgroup label="Batters">`+
-        data.batters.map(p=>`<option value="${p.id}" data-p="0">${p.name} (${p.position})</option>`).join("")+
-        `</optgroup>`);
-    }
-    if(data.pitchers?.length){
-      opts.push(`<optgroup label="Pitchers">`+
-        data.pitchers.map(p=>`<option value="${p.id}" data-p="1">${p.name} (P)</option>`).join("")+
-        `</optgroup>`);
-    }
+    if(data.batters?.length) opts.push(`<optgroup label="Batters">`+
+      data.batters.map(p=>`<option value="${p.id}" data-p="0">${p.name} (${p.position})</option>`).join("")+`</optgroup>`);
+    if(data.pitchers?.length) opts.push(`<optgroup label="Pitchers">`+
+      data.pitchers.map(p=>`<option value="${p.id}" data-p="1">${p.name} (P)</option>`).join("")+`</optgroup>`);
     playerPick.innerHTML=opts.join("");
-    propStatus("live",`${data.playerCount} players on the ${data.team.name} active roster`);
-  } catch(err){ propStatus("err","Couldn't load roster: "+err.message); }
+    propStatus("live",`${data.playerCount} players on the ${data.team.name} roster`);
+  }catch(err){propStatus("err","Couldn't load roster: "+err.message);}
 };
 
-playerPick.onchange=async ()=>{
+playerPick.onchange=async()=>{
   const id=playerPick.value;
   document.getElementById("propResult").innerHTML="";
-  if(!id) return;
+  if(!id){CURRENT_LOG=null;return;}
   const isPitcher=playerPick.selectedOptions[0]?.dataset.p==="1";
   setStatOptions(isPitcher);
   propStatus("","Loading game log…");
-  try {
+  try{
     const group=isPitcher?"pitching":"hitting";
-    const res=await fetch(`/api/player?id=${id}&group=${group}`);
-    const data=await res.json();
+    const res=await fetch(`/api/player?id=${id}&group=${group}`); const data=await res.json();
     if(!res.ok) throw new Error(data.error||"Log error");
-    if(!data.gameCount){
-      CURRENT_LOG=null;
-      propStatus("err",data.note||"No games found for this player this season.");
-      return;
-    }
+    if(!data.gameCount){CURRENT_LOG=null;propStatus("err",data.note||"No games this season.");return;}
     CURRENT_LOG=data;
-    propStatus("live",`${data.player.name} — ${data.gameCount} games logged this season`);
+    propStatus("live",`${data.player.name} — ${data.gameCount} games logged`);
     renderProp();
-  } catch(err){ CURRENT_LOG=null; propStatus("err","Couldn't load log: "+err.message); }
+  }catch(err){CURRENT_LOG=null;propStatus("err","Couldn't load log: "+err.message);}
 };
 
 statPick.onchange=renderProp;
 linePick.oninput=renderProp;
 
-function rateClass(pct){ return pct>=60?"hot":pct<=40?"cold":"mid"; }
+const rateClass=p=>p>=60?"hot":p<=40?"cold":"mid";
 
 function renderProp(){
   if(!CURRENT_LOG) return;
   const stat=statPick.value;
   const line=parseFloat(linePick.value);
   const label=statPick.selectedOptions[0]?.textContent||stat;
+  const group=CURRENT_LOG.group;
   const games=CURRENT_LOG.games;
 
+  // recency windows
   const windows=[["Last 5",5],["Last 10",10],["Last 15",15],["Season",games.length]];
   const rateCards=windows.map(([name,n])=>{
     const slice=games.slice(-n).filter(g=>g[stat]!=null);
     if(!slice.length) return "";
     const over=slice.filter(g=>g[stat]>line).length;
     const pct=Math.round(over/slice.length*100);
-    const avg=(slice.reduce((s,g)=>s+g[stat],0)/slice.length).toFixed(2);
-    return `<div class="rate">
-      <div class="rate-label">${name.toUpperCase()}</div>
+    const av=(slice.reduce((s,g)=>s+g[stat],0)/slice.length).toFixed(2);
+    return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
       <div class="rate-value ${rateClass(pct)}">${pct}%</div>
-      <div class="rate-sub">${over}/${slice.length} over · avg ${avg}</div>
-    </div>`;
+      <div class="rate-sub">${over}/${slice.length} over · avg ${av}</div></div>`;
   }).join("");
 
-  const recent=games.slice(-25);
+  // matchup splits
+  const withCtx=games.map(g=>({...g,_m:matchupFor(g.opponent,group)}));
+  const tiers=[["Soft matchups","soft"],["Neutral","neutral"],["Tough matchups","tough"]];
+  const splitCards=CONTEXT ? tiers.map(([name,tier])=>{
+    const slice=withCtx.filter(g=>g._m?.tier===tier && g[stat]!=null);
+    if(!slice.length) return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
+      <div class="rate-value neutralM">—</div><div class="rate-sub">no games</div></div>`;
+    const over=slice.filter(g=>g[stat]>line).length;
+    const pct=Math.round(over/slice.length*100);
+    const av=(slice.reduce((s,g)=>s+g[stat],0)/slice.length).toFixed(2);
+    return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
+      <div class="rate-value ${rateClass(pct)}">${pct}%</div>
+      <div class="rate-sub">${over}/${slice.length} over · avg ${av}</div></div>`;
+  }).join("") : "";
+
+  // how many of the recent 5 came against soft matchups?
+  const last5=withCtx.slice(-5);
+  const softLast5=last5.filter(g=>g._m?.tier==="soft").length;
+  const toughLast5=last5.filter(g=>g._m?.tier==="tough").length;
+  let warning="";
+  if(CONTEXT && softLast5>=3){
+    warning=`<div class="callout">⚠ <strong>${softLast5} of the last 5</strong> came against
+      favourable matchups. Recent form here may be flattered by weak opposition rather than
+      a real change in the player.</div>`;
+  } else if(CONTEXT && toughLast5>=3){
+    warning=`<div class="callout">Note: <strong>${toughLast5} of the last 5</strong> came against
+      tough matchups. Recent numbers may understate what this player does against average opposition.</div>`;
+  }
+
+  // bar chart
+  const recent=withCtx.slice(-25);
   const max=Math.max(...recent.map(g=>g[stat]||0), line, 1);
   const bars=recent.map(g=>{
     const v=g[stat]||0;
     const h=Math.max(3,Math.round(v/max*100));
-    const cls=v>line?"over":"under";
-    return `<div class="bar ${cls}" style="height:${h}%" title="${g.date} ${g.isHome?'vs':'@'} ${g.opponent}: ${v}"></div>`;
+    return `<div class="bar ${v>line?"over":"under"}" style="height:${h}%"
+      title="${g.date} ${g.isHome?'vs':'@'} ${g.opponent}: ${v}${g._m?' · '+g._m.label:''}"></div>`;
   }).join("");
 
-  const rows=[...games].reverse();
+  const rows=[...withCtx].reverse();
   const keys=Object.keys(games[0]).filter(k=>!["date","opponent","isHome"].includes(k));
+  const ctxHeader = group==="pitching" ? "OPP LINEUP K-RATE" : "OPP STAFF ERA";
 
   document.getElementById("propResult").innerHTML=`
     <div class="card" style="padding:1.1rem;margin-bottom:1rem">
@@ -405,32 +438,48 @@ function renderProp(){
       <div style="color:var(--amber);font-family:Oswald,sans-serif;margin-top:.4rem">${label} — over ${line}</div>
     </div>
 
+    <div class="div-label">BY RECENCY</div>
     <div class="rates">${rateCards}</div>
+
+    ${CONTEXT?`<div class="div-label">BY MATCHUP DIFFICULTY</div>
+    <div class="rates">${splitCards}</div>
+    <div class="card" style="margin-bottom:1rem">${warning||`<div class="callout">
+      Matchup tiers use the opponent's season profile. ${group==="pitching"
+        ? "Soft = a lineup that strikes out a lot (top 10). Tough = a disciplined lineup (bottom 10)."
+        : "Soft = a staff with a poor ERA (bottom 10). Tough = a strong staff (top 10)."}
+      </div>`}</div>`:""}
 
     <div class="card" style="margin-bottom:1rem">
       <div class="section-title">${label.toUpperCase()} — LAST ${recent.length} GAMES</div>
       <div class="bars">${bars}</div>
       <div class="lineMark">line ${line}</div>
       <div style="padding:.6rem 1rem;color:var(--dim);font-size:.7rem">
-        Green cleared the line, red didn't. Oldest on the left.
+        Green cleared the line, red didn't. Oldest on the left. Tap a bar for the matchup.
       </div>
     </div>
 
     <div class="card">
       <div class="section-title">FULL GAME LOG</div>
       <div class="wrap"><table>
-        <thead><tr><th>DATE</th><th>OPP</th>${keys.map(k=>`<th>${k}</th>`).join("")}</tr></thead>
+        <thead><tr><th>DATE</th><th>OPP</th><th>${ctxHeader}</th>${keys.map(k=>`<th>${k}</th>`).join("")}</tr></thead>
         <tbody>${rows.map(g=>`<tr>
           <td style="color:var(--dim)">${g.date}</td>
-          <td>${g.isHome?"vs":"@"} ${(g.opponent||"").replace(/^(New York|Los Angeles|San |St\. |Chicago |Kansas City |Tampa Bay )/,"")}</td>
+          <td>${g.isHome?"vs":"@"} ${shortName(g.opponent)}</td>
+          <td class="${g._m?(g._m.tier==="soft"?"soft":g._m.tier==="tough"?"tough":"neutralM"):"neutralM"}">
+            ${g._m?g._m.detail+" ("+g._m.label+")":"—"}</td>
           ${keys.map(k=>`<td class="mono" style="${k===stat?'color:var(--amber);font-weight:600':''}">${g[k]??"—"}</td>`).join("")}
         </tr>`).join("")}</tbody>
       </table></div>
     </div>`;
 }
 
+function shortName(n){
+  return (n||"").replace(/^(New York |Los Angeles |San |St\. |Chicago |Kansas City |Tampa Bay |Washington |Philadelphia |Pittsburgh |Cincinnati |Cleveland |Milwaukee |Minnesota |Baltimore |Toronto |Detroit |Houston |Seattle |Texas |Arizona |Colorado |Atlanta |Miami |Boston |Oakland )/,"");
+}
+
 loadGames();
 loadOdds();
+loadContext();
 </script>
 </body>
 </html>
