@@ -90,6 +90,33 @@
   .vflat { border-color:var(--amber); }
   .gapnum { font-family:Oswald,sans-serif; font-size:1.9rem; }
 
+  .markets { display:flex; gap:.3rem; overflow-x:auto; padding:.6rem 1rem; border-bottom:1px solid var(--line);
+             -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .markets::-webkit-scrollbar { display:none; }
+  .mkt { background:none; border:none; color:var(--dim); font-family:Oswald,sans-serif;
+         font-size:.88rem; padding:.4rem .7rem; white-space:nowrap; cursor:pointer;
+         border-bottom:2px solid transparent; }
+  .mkt.on { color:var(--chalk); border-bottom-color:var(--amber); }
+
+  .hero { display:flex; flex-wrap:wrap; gap:1.6rem; align-items:center; padding:1.1rem 1rem; }
+  .hero-name { font-family:Oswald,sans-serif; font-size:1.45rem; font-weight:700; }
+  .hero-sub { color:var(--dim); font-size:.78rem; }
+  .hero-stat { text-align:center; }
+  .hero-big { font-family:Oswald,sans-serif; font-size:1.75rem; line-height:1.1; }
+  .hero-cap { color:var(--dim); font-size:.66rem; letter-spacing:.06em; }
+
+  .gchart { display:flex; align-items:flex-end; gap:4px; padding:1rem .6rem .2rem;
+            overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; position:relative; }
+  .gchart::-webkit-scrollbar { display:none; }
+  .gcol { display:flex; flex-direction:column; align-items:center; min-width:38px; flex:1; cursor:pointer; }
+  .gbar { width:100%; border-radius:3px 3px 0 0; display:flex; align-items:flex-end;
+          justify-content:center; color:#fff; font-family:Oswald,sans-serif; font-size:.8rem;
+          padding-bottom:2px; min-height:16px; }
+  .gbar.over { background:#3C6E47; } .gbar.under { background:#E4573D; }
+  .gbar.next { background:none; border:1px dashed var(--dim); color:var(--dim); }
+  .gmeta { font-size:.6rem; color:var(--dim); text-align:center; margin-top:.3rem; line-height:1.25; }
+  .gsel { outline:2px solid var(--amber); outline-offset:1px; }
+
   details.fold { background:var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:1rem; }
   details.fold > summary { font-family:Oswald,sans-serif; font-size:.95rem; padding:1rem;
     cursor:pointer; list-style:none; display:flex; justify-content:space-between; align-items:center; }
@@ -145,10 +172,11 @@
 <div id="viewProps" class="hidden">
   <div class="card" style="margin-bottom:1rem">
     <div class="section-title">FIND A PLAYER</div>
+    <div class="markets" id="marketTabs"></div>
     <div class="controls">
       <div class="field"><label>TEAM</label><select id="teamPick"></select></div>
       <div class="field"><label>PLAYER</label><select id="playerPick"><option value="">— pick a team first —</option></select></div>
-      <div class="field"><label>STAT</label><select id="statPick"></select></div>
+
       <div class="field"><label>PROP LINE</label><input type="number" id="linePick" value="1.5" step="0.5" min="0"></div>
       <div class="field"><label>TREND SMOOTHING</label>
         <select id="smoothPick">
@@ -171,6 +199,7 @@
       <span class="dot" id="spDot"></span><span id="spText">Loading starting pitchers…</span>
     </div>
   </div>
+  <select id="statPick" style="display:none"></select>
   <div id="propResult"></div>
 </div>
 
@@ -405,8 +434,29 @@ teamPick.innerHTML=`<option value="">— choose —</option>`+
 
 function setStatOptions(isPitcher){
   const list=isPitcher?PITCH_STATS:HIT_STATS;
+  const keep=statPick.value;
   statPick.innerHTML=list.map(([k,l])=>`<option value="${k}">${l}</option>`).join("");
+  if(list.some(([k])=>k===keep)) statPick.value=keep;
+  renderMarketTabs(list);
 }
+
+function renderMarketTabs(list){
+  const bar=document.getElementById("marketTabs");
+  bar.innerHTML=list.map(([k,l])=>
+    `<button class="mkt ${k===statPick.value?"on":""}" data-k="${k}">${l}</button>`).join("");
+  bar.querySelectorAll(".mkt").forEach(b=>{
+    b.onclick=()=>{
+      statPick.value=b.dataset.k;
+      bar.querySelectorAll(".mkt").forEach(x=>x.classList.remove("on"));
+      b.classList.add("on");
+      renderProp();
+    };
+  });
+}
+
+// full team name -> short code, for the chart axis
+const ABBR_BY_NAME={};
+TEAM_LIST.forEach(([a,n])=>{ ABBR_BY_NAME[n]=a; });
 setStatOptions(false);
 
 function propStatus(kind,msg){
@@ -478,6 +528,52 @@ document.getElementById("oddsFmt").onchange=function(){
   renderProp();
 };
 document.getElementById("oddsLabel").textContent="ODDS (AMERICAN)";
+
+// Game-by-game chart with the value printed in each bar and the opponent
+// underneath. Far easier to read at a glance than an unlabelled trend line.
+function gameChart(games, stat, line, showN){
+  const pts=games.filter(g=>g[stat]!=null).slice(-showN);
+  if(!pts.length) return "";
+  const max=Math.max(...pts.map(g=>g[stat]), line)*1.15 || 1;
+  const H=170;
+  const yFor=v=> Math.max(16, Math.round((v/max)*H));
+
+  const cols=pts.map((g,i)=>{
+    const v=g[stat];
+    const over=v>line;
+    const abbr=ABBR_BY_NAME[g.opponent] || shortName(g.opponent).slice(0,3).toUpperCase();
+    const d=g.date? new Date(g.date+"T00:00:00") : null;
+    const dLabel = d && !isNaN(d) ? d.toLocaleString([], {month:"short", day:"numeric"}) : (g.date||"");
+    const detail=[`${g.date}`, `${g.isHome?"vs":"@"} ${shortName(g.opponent)}`, `${v}`]
+      .concat(g._m?[g._m.headline]:[]).concat(g._h?[`${g._h.throws}HP`]:[])
+      .concat(g._p?[`${g._p.name} (${g._p.factor??"—"})`]:[]).join(" · ");
+    return `<div class="gcol" data-i="${i}" data-detail="${detail.replace(/"/g,"&quot;")}">
+      <div class="gbar ${over?"over":"under"}" style="height:${yFor(v)}px">${v}</div>
+      <div class="gmeta">${g.isHome?"":"@"}${abbr}<br>${dLabel}</div>
+    </div>`;
+  }).join("");
+
+  // empty slot for the next game, like the books show
+  const nextSlot=`<div class="gcol">
+      <div class="gbar next" style="height:${yFor(line)}px">?</div>
+      <div class="gmeta">NEXT</div>
+    </div>`;
+
+  const linePos = Math.max(16, Math.round((line/max)*H));
+
+  return `<div style="position:relative">
+    <div class="gchart" id="gameChart">${cols}${nextSlot}</div>
+    <div style="position:absolute;left:.6rem;right:.6rem;bottom:calc(0.2rem + 34px + ${linePos}px);
+                border-top:2px solid var(--amber);pointer-events:none"></div>
+    <div style="position:absolute;left:.6rem;bottom:calc(0.2rem + 34px + ${linePos}px + 3px);
+                background:var(--amber);color:#000;font-family:Oswald,sans-serif;font-size:.72rem;
+                padding:0 .35rem;border-radius:3px;pointer-events:none">${line}</div>
+  </div>
+  <div id="gameInfo" style="padding:.7rem 1rem;color:var(--dim);font-size:.75rem;
+       border-top:1px solid var(--line);min-height:2.4rem">
+    <strong style="color:var(--amber)">Tap any bar</strong> for the full matchup detail.
+  </div>`;
+}
 
 // Rolling-average chart. Plain SVG, no library.
 // The shaded band is the point: green where the trend sits above the prop line,
@@ -851,10 +947,35 @@ function renderProp(){
   const ctxHeader = group==="pitching" ? "OPPOSING LINEUP" : "STARTING PITCHER FACED";
 
   document.getElementById("propResult").innerHTML=`
-    <div class="card" style="padding:1.1rem;margin-bottom:1rem">
-      <div style="font-family:Oswald,sans-serif;font-size:1.5rem;font-weight:700">${CURRENT_LOG.player.name}</div>
-      <div style="color:var(--dim);font-size:.8rem">${CURRENT_LOG.player.team||""} · ${CURRENT_LOG.player.position||""} · ${CURRENT_LOG.season} season</div>
-      <div style="color:var(--amber);font-family:Oswald,sans-serif;margin-top:.4rem">${label} — over ${line} at ${oddsShown}</div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="hero">
+        <div style="flex:1;min-width:180px">
+          <div class="hero-name">${CURRENT_LOG.player.name}</div>
+          <div class="hero-sub">${CURRENT_LOG.player.team||""} · ${CURRENT_LOG.player.position||""} · ${CURRENT_LOG.season}</div>
+          <div style="margin-top:.5rem;display:inline-block;background:var(--panelAlt);
+                      border:1px solid var(--line);border-radius:6px;padding:.3rem .6rem;
+                      font-family:ui-monospace,monospace;font-size:.82rem">
+            ${line} ${label} · ${oddsShown}
+          </div>
+        </div>
+        ${seasonRate!=null?`<div class="hero-stat">
+          <div class="hero-cap">HIT RATE</div>
+          <div class="hero-big" style="color:${be!=null?(seasonRate>be?"var(--grass)":"var(--red)"):"var(--amber)"}">
+            ${(seasonRate*100).toFixed(1)}%</div>
+          <div class="hero-sub">${seasonOver}/${seasonSlice.length}</div>
+        </div>`:""}
+        ${be!=null?`<div class="hero-stat">
+          <div class="hero-cap">ODDS IMPLY</div>
+          <div class="hero-big">${(be*100).toFixed(1)}%</div>
+          <div class="hero-sub">break-even</div>
+        </div>`:""}
+        ${(be!=null&&seasonRate!=null)?`<div class="hero-stat">
+          <div class="hero-cap">EDGE</div>
+          <div class="hero-big" style="color:${seasonRate-be>0.02?"var(--grass)":seasonRate-be< -0.02?"var(--red)":"var(--amber)"}">
+            ${(seasonRate-be)>0?"+":""}${((seasonRate-be)*100).toFixed(1)}%</div>
+          <div class="hero-sub">historical vs price</div>
+        </div>`:""}
+      </div>
     </div>
 
     ${verdictBlock}
@@ -880,19 +1001,13 @@ function renderProp(){
     ${spSummary}
 
     <div class="card" style="margin-bottom:1rem">
-      <div class="section-title">${label.toUpperCase()} — SEASON TREND</div>
-      ${lineChart(games, stat, line, Number(document.getElementById('smoothPick').value)||10)}
+      <div class="section-title">${label.toUpperCase()} — LAST ${Math.min(games.length,20)} GAMES</div>
+      ${gameChart(withCtx, stat, line, 20)}
     </div>
 
     <details class="fold">
-      <summary>LAST ${recent.length} GAMES — BAR VIEW</summary>
-      <div class="foldbody">
-        <div class="bars">${bars}</div>
-        <div class="lineMark">line ${line}</div>
-        <div id="barInfo" style="padding:.6rem 1rem;color:var(--dim);font-size:.75rem;min-height:2.4rem;border-top:1px solid var(--line)">
-          Green cleared the line, red didn't. Oldest on the left. <strong style="color:var(--amber)">Tap any bar</strong> for that game's detail.
-        </div>
-      </div>
+      <summary>SEASON TREND LINE</summary>
+      <div class="foldbody">${lineChart(games, stat, line, Number(document.getElementById('smoothPick').value)||10)}</div>
     </details>
 
     <details class="fold">
@@ -913,16 +1028,16 @@ function renderProp(){
       </table></div>
     </details>`;
 
-  // Tap a bar to see that game. iPads have no hover, so tooltips won't do.
-  const barWrap=document.querySelector("#propResult .bars");
-  const readout=document.getElementById("barInfo");
-  if(barWrap && readout){
-    barWrap.addEventListener("click", e=>{
-      const bar=e.target.closest(".bar");
-      if(!bar) return;
-      barWrap.querySelectorAll(".bar").forEach(b=>b.style.outline="");
-      bar.style.outline="2px solid var(--amber)";
-      readout.innerHTML=`<span style="color:var(--chalk)">${bar.dataset.info}</span>`;
+  // Tap a bar for detail. iPads have no hover, so tooltips won't do.
+  const gc=document.getElementById("gameChart");
+  const gi=document.getElementById("gameInfo");
+  if(gc && gi){
+    gc.addEventListener("click", e=>{
+      const col=e.target.closest(".gcol");
+      if(!col || !col.dataset.detail) return;
+      gc.querySelectorAll(".gcol").forEach(c=>c.classList.remove("gsel"));
+      col.classList.add("gsel");
+      gi.innerHTML=`<span style="color:var(--chalk)">${col.dataset.detail}</span>`;
     });
   }
 }
