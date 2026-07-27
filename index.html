@@ -420,11 +420,13 @@ function renderProp(){
   // bar chart
   const recent=withCtx.slice(-25);
   const max=Math.max(...recent.map(g=>g[stat]||0), line, 1);
-  const bars=recent.map(g=>{
+  const bars=recent.map((g,i)=>{
     const v=g[stat]||0;
     const h=Math.max(3,Math.round(v/max*100));
+    const info=`${g.date} · ${g.isHome?"vs":"@"} ${shortName(g.opponent)} · ${label}: ${v}`+
+      (g._m?` · ${g._m.detail} (${g._m.label}, ${g._m.tier})`:"");
     return `<div class="bar ${v>line?"over":"under"}" style="height:${h}%"
-      title="${g.date} ${g.isHome?'vs':'@'} ${g.opponent}: ${v}${g._m?' · '+g._m.label:''}"></div>`;
+      data-info="${info.replace(/"/g,"&quot;")}" data-i="${i}"></div>`;
   }).join("");
 
   const rows=[...withCtx].reverse();
@@ -453,8 +455,8 @@ function renderProp(){
       <div class="section-title">${label.toUpperCase()} — LAST ${recent.length} GAMES</div>
       <div class="bars">${bars}</div>
       <div class="lineMark">line ${line}</div>
-      <div style="padding:.6rem 1rem;color:var(--dim);font-size:.7rem">
-        Green cleared the line, red didn't. Oldest on the left. Tap a bar for the matchup.
+      <div id="barInfo" style="padding:.6rem 1rem;color:var(--dim);font-size:.75rem;min-height:2.4rem;border-top:1px solid var(--line)">
+        Green cleared the line, red didn't. Oldest on the left. <strong style="color:var(--amber)">Tap any bar</strong> for that game's detail.
       </div>
     </div>
 
@@ -471,10 +473,36 @@ function renderProp(){
         </tr>`).join("")}</tbody>
       </table></div>
     </div>`;
+
+  // Tap a bar to see that game. iPads have no hover, so tooltips won't do.
+  const barWrap=document.querySelector("#propResult .bars");
+  const readout=document.getElementById("barInfo");
+  if(barWrap && readout){
+    barWrap.addEventListener("click", e=>{
+      const bar=e.target.closest(".bar");
+      if(!bar) return;
+      barWrap.querySelectorAll(".bar").forEach(b=>b.style.outline="");
+      bar.style.outline="2px solid var(--amber)";
+      readout.innerHTML=`<span style="color:var(--chalk)">${bar.dataset.info}</span>`;
+    });
+  }
 }
 
 function shortName(n){
-  return (n||"").replace(/^(New York |Los Angeles |San |St\. |Chicago |Kansas City |Tampa Bay |Washington |Philadelphia |Pittsburgh |Cincinnati |Cleveland |Milwaukee |Minnesota |Baltimore |Toronto |Detroit |Houston |Seattle |Texas |Arizona |Colorado |Atlanta |Miami |Boston |Oakland )/,"");
+  const map={
+    "Arizona Diamondbacks":"D-backs","Atlanta Braves":"Braves","Baltimore Orioles":"Orioles",
+    "Boston Red Sox":"Red Sox","Chicago Cubs":"Cubs","Chicago White Sox":"White Sox",
+    "Cincinnati Reds":"Reds","Cleveland Guardians":"Guardians","Colorado Rockies":"Rockies",
+    "Detroit Tigers":"Tigers","Houston Astros":"Astros","Kansas City Royals":"Royals",
+    "Los Angeles Angels":"Angels","Los Angeles Dodgers":"Dodgers","Miami Marlins":"Marlins",
+    "Milwaukee Brewers":"Brewers","Minnesota Twins":"Twins","New York Mets":"Mets",
+    "New York Yankees":"Yankees","Athletics":"Athletics","Oakland Athletics":"Athletics",
+    "Philadelphia Phillies":"Phillies","Pittsburgh Pirates":"Pirates","San Diego Padres":"Padres",
+    "Seattle Mariners":"Mariners","San Francisco Giants":"Giants","St. Louis Cardinals":"Cardinals",
+    "Tampa Bay Rays":"Rays","Texas Rangers":"Rangers","Toronto Blue Jays":"Blue Jays",
+    "Washington Nationals":"Nationals"
+  };
+  return map[n] || n || "";
 }
 
 loadGames();
