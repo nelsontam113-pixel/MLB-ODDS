@@ -147,9 +147,12 @@ export default async function handler(req, res) {
           },
         };
 
-        if (entry.home.pitcherId || entry.away.pitcherId) withStarters++;
-        if (venueId) withVenue++;
+        const isNew = !games[g.gamePk];
         games[g.gamePk] = entry;
+        if (isNew) {
+          if (entry.home.pitcherId || entry.away.pitcherId) withStarters++;
+          if (venueId) withVenue++;
+        }
       }
     }
 
