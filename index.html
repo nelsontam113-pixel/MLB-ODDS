@@ -89,6 +89,18 @@
   .vbad { border-color:var(--red); }
   .vflat { border-color:var(--amber); }
   .gapnum { font-family:Oswald,sans-serif; font-size:1.9rem; }
+
+  details.fold { background:var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:1rem; }
+  details.fold > summary { font-family:Oswald,sans-serif; font-size:.95rem; padding:1rem;
+    cursor:pointer; list-style:none; display:flex; justify-content:space-between; align-items:center; }
+  details.fold > summary::-webkit-details-marker { display:none; }
+  details.fold > summary::after { content:"▸ show"; color:var(--amber); font-size:.72rem; font-family:Inter,sans-serif; }
+  details.fold[open] > summary::after { content:"▾ hide"; }
+  details.fold > summary:hover { color:var(--amber); }
+  .foldbody { border-top:1px solid var(--line); }
+  .chartwrap { padding:1rem .5rem .5rem; }
+  .legend { display:flex; gap:1.2rem; flex-wrap:wrap; padding:0 1rem 1rem; font-size:.72rem; color:var(--dim); }
+  .swatch { display:inline-block; width:14px; height:3px; vertical-align:middle; margin-right:.35rem; }
 </style>
 </head>
 <body>
@@ -458,6 +470,61 @@ document.getElementById("oddsFmt").onchange=function(){
 };
 document.getElementById("oddsLabel").textContent="ODDS (AMERICAN)";
 
+// Rolling-average line chart. Plain SVG, no library.
+// Shows the trend against the prop line, which reads far better than 96 bars.
+function lineChart(games, stat, line, windowSize){
+  const vals=games.map(g=>g[stat]).filter(v=>v!=null);
+  if(vals.length<3) return "";
+
+  const W=700, H=200, padL=34, padR=12, padT=12, padB=26;
+  const n=vals.length;
+
+  // rolling average
+  const roll=vals.map((_,i)=>{
+    const from=Math.max(0,i-windowSize+1);
+    const slice=vals.slice(from,i+1);
+    return slice.reduce((a,b)=>a+b,0)/slice.length;
+  });
+
+  const maxV=Math.max(...vals, line, ...roll)*1.1 || 1;
+  const x=i=> padL + (i/(n-1))*(W-padL-padR);
+  const y=v=> H-padB - (v/maxV)*(H-padT-padB);
+
+  const rollPath=roll.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const dots=vals.map((v,i)=>
+    `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.2"
+      fill="${v>line?"#3C6E47":"#E4573D"}" opacity=".75"/>`).join("");
+
+  // y gridlines
+  const ticks=[0,0.25,0.5,0.75,1].map(f=>{
+    const v=maxV*f;
+    return `<line x1="${padL}" y1="${y(v)}" x2="${W-padR}" y2="${y(v)}" stroke="#333" stroke-width="1"/>
+      <text x="${padL-6}" y="${y(v)+3.5}" fill="#9FAEC4" font-size="9" text-anchor="end">${v.toFixed(1)}</text>`;
+  }).join("");
+
+  const firstDate=games.find(g=>g[stat]!=null)?.date||"";
+  const lastDate=[...games].reverse().find(g=>g[stat]!=null)?.date||"";
+
+  return `<div class="chartwrap">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+      ${ticks}
+      <line x1="${padL}" y1="${y(line)}" x2="${W-padR}" y2="${y(line)}"
+        stroke="#FFB627" stroke-width="1.5" stroke-dasharray="5 4"/>
+      <text x="${W-padR}" y="${y(line)-5}" fill="#FFB627" font-size="10" text-anchor="end">line ${line}</text>
+      <path d="${rollPath}" fill="none" stroke="#FFFFFF" stroke-width="2.2"/>
+      ${dots}
+      <text x="${padL}" y="${H-8}" fill="#9FAEC4" font-size="9">${firstDate}</text>
+      <text x="${W-padR}" y="${H-8}" fill="#9FAEC4" font-size="9" text-anchor="end">${lastDate}</text>
+    </svg>
+  </div>
+  <div class="legend">
+    <span><span class="swatch" style="background:#FFFFFF"></span>${windowSize}-game rolling average</span>
+    <span><span class="swatch" style="background:#FFB627"></span>prop line</span>
+    <span><span class="swatch" style="background:#3C6E47;height:8px;width:8px;border-radius:99px"></span>cleared</span>
+    <span><span class="swatch" style="background:#E4573D;height:8px;width:8px;border-radius:99px"></span>missed</span>
+  </div>`;
+}
+
 // Which hand did the opposing starter throw with, and did the batter have the platoon edge?
 function handContext(game, playerId){
   if(!PITCHERS || !game.gamePk) return null;
@@ -711,7 +778,6 @@ function renderProp(){
       const lg=PITCHERS.leagueAvg.starterEra;
       const easier=avgFaced>lg;
       spSummary=`<div class="card" style="margin-bottom:1rem">
-        <div class="section-title">WHO HE'S BEEN FACING — LAST ${named.length} STARTS SEEN</div>
         <div class="callout" style="border-top:none">
           Average ERA of the starters faced: <strong style="color:${easier?'var(--grass)':'var(--red)'}">${avgFaced}</strong>
           against a league average of <strong>${lg}</strong>.
@@ -719,7 +785,11 @@ function renderProp(){
             ? "He's been seeing <strong>weaker pitching than typical</strong>, so recent numbers likely overstate his form."
             : "He's been seeing <strong>stronger pitching than typical</strong>, so recent numbers likely understate his form."}
         </div>
-        <div class="wrap"><table>
+        </div>
+      </div>
+      <details class="fold">
+        <summary>STARTERS FACED — LAST ${named.length}</summary>
+        <div class="foldbody wrap"><table>
           <thead><tr><th>DATE</th><th>PITCHER</th><th>ERA</th><th>VS LEAGUE AVG</th></tr></thead>
           <tbody>${[...named].reverse().map(g=>{
             const d=(g._m.era-PITCHERS.leagueAvg.starterEra).toFixed(2);
@@ -729,7 +799,7 @@ function renderProp(){
               <td class="mono ${d>0?"soft":"tough"}">${d>0?"+":""}${d}</td></tr>`;
           }).join("")}</tbody>
         </table></div>
-      </div>`;
+      </details>`;
     }
   }
 
@@ -759,23 +829,32 @@ function renderProp(){
           : `Starting pitcher data unavailable — falling back to team staff ERA.`}
       </div>`}</div>`:""}
 
-    ${handBlock}
-    ${parkBlock}
+    ${(handBlock||parkBlock)?`<details class="fold">
+      <summary>MORE SPLITS — HANDEDNESS &amp; BALLPARK</summary>
+      <div class="foldbody" style="padding:1rem">${handBlock}${parkBlock}</div>
+    </details>`:""}
 
     ${spSummary}
 
     <div class="card" style="margin-bottom:1rem">
-      <div class="section-title">${label.toUpperCase()} — LAST ${recent.length} GAMES</div>
-      <div class="bars">${bars}</div>
-      <div class="lineMark">line ${line}</div>
-      <div id="barInfo" style="padding:.6rem 1rem;color:var(--dim);font-size:.75rem;min-height:2.4rem;border-top:1px solid var(--line)">
-        Green cleared the line, red didn't. Oldest on the left. <strong style="color:var(--amber)">Tap any bar</strong> for that game's detail.
-      </div>
+      <div class="section-title">${label.toUpperCase()} — SEASON TREND</div>
+      ${lineChart(games, stat, line, 10)}
     </div>
 
-    <div class="card">
-      <div class="section-title">FULL GAME LOG</div>
-      <div class="wrap"><table>
+    <details class="fold">
+      <summary>LAST ${recent.length} GAMES — BAR VIEW</summary>
+      <div class="foldbody">
+        <div class="bars">${bars}</div>
+        <div class="lineMark">line ${line}</div>
+        <div id="barInfo" style="padding:.6rem 1rem;color:var(--dim);font-size:.75rem;min-height:2.4rem;border-top:1px solid var(--line)">
+          Green cleared the line, red didn't. Oldest on the left. <strong style="color:var(--amber)">Tap any bar</strong> for that game's detail.
+        </div>
+      </div>
+    </details>
+
+    <details class="fold">
+      <summary>FULL GAME LOG — ${games.length} GAMES</summary>
+      <div class="foldbody wrap"><table>
         <thead><tr><th>DATE</th><th>OPP</th><th>${ctxHeader}</th><th>HAND</th><th>PARK</th>${keys.map(k=>`<th>${k}</th>`).join("")}</tr></thead>
         <tbody>${rows.map(g=>`<tr>
           <td style="color:var(--dim)">${g.date}</td>
@@ -789,7 +868,7 @@ function renderProp(){
           ${keys.map(k=>`<td class="mono" style="${k===stat?'color:var(--amber);font-weight:600':''}">${g[k]??"—"}</td>`).join("")}
         </tr>`).join("")}</tbody>
       </table></div>
-    </div>`;
+    </details>`;
 
   // Tap a bar to see that game. iPads have no hover, so tooltips won't do.
   const barWrap=document.querySelector("#propResult .bars");
