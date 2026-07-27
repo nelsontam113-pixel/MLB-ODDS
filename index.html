@@ -7,17 +7,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-  --bg:#000000; --panel:#111111; --panelAlt:#1A1A1A; --line:#333333;
-  --chalk:#FFFFFF; --dim:#9FAEC4; --amber:#FFB627; --grass:#3C6E47;
-  --dirt:#C9A87C; --red:#E4573D;
-}
+    --bg:#000000; --panel:#111111; --panelAlt:#1A1A1A; --line:#333333;
+    --chalk:#FFFFFF; --dim:#9FAEC4; --amber:#FFB627; --grass:#3C6E47;
+    --dirt:#C9A87C; --red:#E4573D;
+  }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   body { margin:0; background:var(--bg); color:var(--chalk);
          font-family:Inter,system-ui,sans-serif; padding:1.25rem; }
   .kicker { color:var(--amber); font-family:Oswald,sans-serif; font-size:.72rem; letter-spacing:.15em; }
-  h1 { font-family:Oswald,sans-serif; font-size:2rem; font-weight:700; margin:.2rem 0 1.2rem; }
+  h1 { font-family:Oswald,sans-serif; font-size:2rem; font-weight:700; margin:.2rem 0 1rem; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
-  .status { display:flex; align-items:center; gap:.5rem; padding:.85rem 1rem; font-size:.82rem; color:var(--dim); }
+  .status { display:flex; align-items:center; gap:.5rem; padding:.8rem 1rem; font-size:.8rem; color:var(--dim); }
   .dot { width:9px; height:9px; border-radius:99px; background:var(--dim); flex:none; }
   .dot.live { background:var(--grass); } .dot.err { background:var(--red); }
   .section-title { font-family:Oswald,sans-serif; padding:1rem; border-bottom:1px solid var(--line); font-size:.95rem; }
@@ -28,7 +28,7 @@
   .mono { font-family:ui-monospace,Menlo,monospace; }
   .best { color:var(--amber); font-weight:600; }
   .wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-  .div-label { color:var(--dirt); font-family:Oswald,sans-serif; font-size:.8rem; letter-spacing:.08em; margin:1.5rem 0 .6rem; }
+  .div-label { color:var(--dirt); font-family:Oswald,sans-serif; font-size:.8rem; letter-spacing:.08em; margin:1.4rem 0 .6rem; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:.7rem; }
   .team { background:var(--panel); border:1px solid var(--line); border-radius:8px;
           padding:.9rem; cursor:pointer; transition:transform .12s; }
@@ -37,7 +37,7 @@
   .badge { background:var(--amber); color:var(--bg); border-radius:4px; padding:.05rem .4rem; font-size:.7rem; font-weight:600; }
   .row { display:flex; justify-content:space-between; align-items:center; gap:.5rem; }
   .rec { color:var(--amber); font-family:Oswald,sans-serif; }
-  .form { display:flex; gap:.25rem; margin-top:.55rem; }
+  .form { display:flex; gap:.25rem; margin-top:.55rem; flex-wrap:wrap; }
   .pill { width:19px; height:19px; border-radius:4px; display:flex; align-items:center;
           justify-content:center; font-size:10px; font-weight:700; }
   .w { background:var(--grass); } .l { background:var(--red); }
@@ -49,6 +49,36 @@
   .stat-label { color:var(--dim); font-size:.66rem; letter-spacing:.06em; }
   .stat-value { font-family:Oswald,sans-serif; font-size:1.4rem; color:var(--amber); }
   .hidden { display:none; }
+
+  /* tabs */
+  .tabs { display:flex; gap:.5rem; margin-bottom:1rem; }
+  .tab { background:var(--panel); border:1px solid var(--line); color:var(--dim);
+         padding:.55rem 1rem; border-radius:8px; font-family:Oswald,sans-serif;
+         font-size:.85rem; cursor:pointer; }
+  .tab.on { background:var(--amber); color:var(--bg); border-color:var(--amber); }
+
+  /* controls */
+  .controls { display:flex; flex-wrap:wrap; gap:.6rem; padding:1rem; align-items:flex-end; }
+  .field { display:flex; flex-direction:column; gap:.25rem; }
+  .field label { color:var(--dim); font-size:.64rem; letter-spacing:.06em; }
+  select, input { background:var(--bg); color:var(--chalk); border:1px solid var(--line);
+                  border-radius:6px; padding:.5rem .6rem; font-family:inherit; font-size:.85rem; }
+  input[type=number] { width:90px; }
+
+  /* hit rate cards */
+  .rates { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.7rem; margin:1rem 0; }
+  .rate { border-radius:8px; padding:.8rem; border:1px solid var(--line); background:var(--panel); }
+  .rate-label { color:var(--dim); font-size:.64rem; letter-spacing:.06em; }
+  .rate-value { font-family:Oswald,sans-serif; font-size:1.6rem; }
+  .rate-sub { color:var(--dim); font-size:.7rem; }
+  .hot { color:var(--grass); } .cold { color:var(--red); } .mid { color:var(--amber); }
+
+  /* bar chart */
+  .bars { display:flex; align-items:flex-end; gap:3px; height:110px; padding:1rem; }
+  .bar { flex:1; min-width:5px; border-radius:2px 2px 0 0; background:var(--line); position:relative; }
+  .bar.over { background:var(--grass); } .bar.under { background:var(--red); }
+  .lineMark { border-top:1px dashed var(--amber); position:relative; margin:0 1rem;
+              color:var(--amber); font-size:.65rem; padding-top:2px; }
 </style>
 </head>
 <body>
@@ -56,177 +86,347 @@
 <div class="kicker">DIAMOND DESK · MLB</div>
 <h1>Sport Analyzer</h1>
 
-<div class="card" style="margin-bottom:1rem">
-  <div class="status"><span class="dot" id="gamesDot"></span><span id="gamesText">Loading results…</span></div>
-  <div class="status" style="border-top:1px solid var(--line)"><span class="dot" id="oddsDot"></span><span id="oddsText">Loading odds…</span></div>
+<div class="tabs">
+  <button class="tab on" id="tabGames">Games &amp; Odds</button>
+  <button class="tab" id="tabProps">Player Props</button>
 </div>
 
-<div id="listView">
-  <div class="card" id="liveCard" style="display:none;margin-bottom:1.2rem">
-    <div class="section-title">UPCOMING GAMES — DRAFTKINGS vs FANDUEL</div>
-    <div class="wrap">
-      <table>
-        <thead><tr><th>MATCHUP</th><th>START</th><th>DK MONEYLINE</th><th>FD MONEYLINE</th><th>TOTAL</th></tr></thead>
-        <tbody id="liveBody"></tbody>
-      </table>
+<!-- ============ GAMES & ODDS ============ -->
+<div id="viewGames">
+
+  <div class="card" style="margin-bottom:1rem">
+    <div class="status"><span class="dot" id="gamesDot"></span><span id="gamesText">Loading results…</span></div>
+    <div class="status" style="border-top:1px solid var(--line)"><span class="dot" id="oddsDot"></span><span id="oddsText">Loading odds…</span></div>
+  </div>
+
+  <div id="listView">
+    <div class="card" id="liveCard" style="display:none;margin-bottom:1.2rem">
+      <div class="section-title">UPCOMING GAMES — DRAFTKINGS vs FANDUEL</div>
+      <div class="wrap">
+        <table>
+          <thead><tr><th>MATCHUP</th><th>START</th><th>DK MONEYLINE</th><th>FD MONEYLINE</th><th>TOTAL</th></tr></thead>
+          <tbody id="liveBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="teams"></div>
+  </div>
+
+  <div id="detailView" class="hidden">
+    <button class="back" id="backBtn">&larr; All teams</button>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<!-- ============ PLAYER PROPS ============ -->
+<div id="viewProps" class="hidden">
+
+  <div class="card" style="margin-bottom:1rem">
+    <div class="section-title">FIND A PLAYER</div>
+    <div class="controls">
+      <div class="field">
+        <label>TEAM</label>
+        <select id="teamPick"></select>
+      </div>
+      <div class="field">
+        <label>PLAYER</label>
+        <select id="playerPick"><option value="">— pick a team first —</option></select>
+      </div>
+      <div class="field">
+        <label>STAT</label>
+        <select id="statPick"></select>
+      </div>
+      <div class="field">
+        <label>PROP LINE</label>
+        <input type="number" id="linePick" value="1.5" step="0.5" min="0">
+      </div>
+    </div>
+    <div class="status" style="border-top:1px solid var(--line)">
+      <span class="dot" id="propDot"></span><span id="propText">Pick a team to start.</span>
     </div>
   </div>
-  <div id="teams"></div>
-</div>
 
-<div id="detailView" class="hidden">
-  <button class="back" id="backBtn">&larr; All teams</button>
-  <div id="detailContent"></div>
+  <div id="propResult"></div>
 </div>
 
 <p class="note">
-  Game results are real, from the official MLB Stats API. Live odds come from DraftKings and
-  FanDuel via The Odds API; the better available moneyline is highlighted in amber. Historical
-  closing odds for finished games aren't included — that's a paid feed. Odds move constantly,
-  so the number shown may not be the number you get.
+  Game results and player stats are real, from the official MLB Stats API. Live odds come
+  from DraftKings and FanDuel via The Odds API; the better available moneyline is highlighted
+  in amber. Hit rates are historical and describe what already happened — they are not
+  predictions, and past rates over small samples are noisy. Prop lines shown are whatever
+  you type in; check the actual line at your book before acting on anything here.
 </p>
 
 <script>
+/* ============ shared ============ */
 let TEAMS = null;
-function fmt(n){ return n==null ? "—" : (n>0 ? "+"+n : ""+n); }
+const fmt = n => n==null ? "—" : (n>0 ? "+"+n : ""+n);
 
+const TEAM_LIST = [
+  ["ARI","Arizona Diamondbacks"],["ATL","Atlanta Braves"],["BAL","Baltimore Orioles"],
+  ["BOS","Boston Red Sox"],["CHC","Chicago Cubs"],["CWS","Chicago White Sox"],
+  ["CIN","Cincinnati Reds"],["CLE","Cleveland Guardians"],["COL","Colorado Rockies"],
+  ["DET","Detroit Tigers"],["HOU","Houston Astros"],["KC","Kansas City Royals"],
+  ["LAA","Los Angeles Angels"],["LAD","Los Angeles Dodgers"],["MIA","Miami Marlins"],
+  ["MIL","Milwaukee Brewers"],["MIN","Minnesota Twins"],["NYM","New York Mets"],
+  ["NYY","New York Yankees"],["ATH","Athletics"],["PHI","Philadelphia Phillies"],
+  ["PIT","Pittsburgh Pirates"],["SD","San Diego Padres"],["SEA","Seattle Mariners"],
+  ["SF","San Francisco Giants"],["STL","St. Louis Cardinals"],["TB","Tampa Bay Rays"],
+  ["TEX","Texas Rangers"],["TOR","Toronto Blue Jays"],["WSH","Washington Nationals"]
+];
+
+const HIT_STATS = [
+  ["hits","Hits"],["homeRuns","Home Runs"],["rbi","RBI"],["runs","Runs"],
+  ["totalBases","Total Bases"],["strikeOuts","Strikeouts"],["baseOnBalls","Walks"],
+  ["stolenBases","Stolen Bases"],["doubles","Doubles"],["atBats","At Bats"]
+];
+const PITCH_STATS = [
+  ["strikeOuts","Strikeouts"],["inningsPitched","Innings Pitched"],["hits","Hits Allowed"],
+  ["earnedRuns","Earned Runs"],["baseOnBalls","Walks"],["numberOfPitches","Pitch Count"],
+  ["battersFaced","Batters Faced"]
+];
+
+/* ============ tabs ============ */
+const tabGames=document.getElementById("tabGames"), tabProps=document.getElementById("tabProps");
+tabGames.onclick=()=>{ tabGames.classList.add("on"); tabProps.classList.remove("on");
+  document.getElementById("viewGames").classList.remove("hidden");
+  document.getElementById("viewProps").classList.add("hidden"); };
+tabProps.onclick=()=>{ tabProps.classList.add("on"); tabGames.classList.remove("on");
+  document.getElementById("viewProps").classList.remove("hidden");
+  document.getElementById("viewGames").classList.add("hidden"); };
+
+/* ============ team results ============ */
 async function loadGames(){
   const dot=document.getElementById("gamesDot"), txt=document.getElementById("gamesText");
   try {
-    const res = await fetch("/api/games");
-    const data = await res.json();
-    if(!res.ok) throw new Error(data.error || "Results error");
-    TEAMS = data.teams;
-    renderTeams();
-    dot.className="dot live";
-    txt.textContent = `Results live — ${data.teamCount} teams from the MLB Stats API`;
-  } catch(err){
-    dot.className="dot err";
-    txt.textContent = "Couldn't load results: " + err.message;
-  }
+    const res=await fetch("/api/games"); const data=await res.json();
+    if(!res.ok) throw new Error(data.error||"Results error");
+    TEAMS=data.teams; renderTeams();
+    dot.className="dot live"; txt.textContent=`Results live — ${data.teamCount} teams from the MLB Stats API`;
+  } catch(err){ dot.className="dot err"; txt.textContent="Couldn't load results: "+err.message; }
 }
 
 function renderTeams(){
-  const wrap = document.getElementById("teams");
-  wrap.innerHTML = "";
-  const divs = {};
-  Object.values(TEAMS).forEach(t=>{ (divs[t.division] = divs[t.division] || []).push(t); });
-
-  const order = ["American League East","American League Central","American League West",
-                 "National League East","National League Central","National League West"];
-  const names = Object.keys(divs).sort((a,b)=>{
-    const ia=order.indexOf(a), ib=order.indexOf(b);
-    return (ia<0?99:ia)-(ib<0?99:ib);
-  });
-
-  names.forEach(div=>{
+  const wrap=document.getElementById("teams"); wrap.innerHTML="";
+  const divs={}; Object.values(TEAMS).forEach(t=>{ (divs[t.division]=divs[t.division]||[]).push(t); });
+  const order=["American League East","American League Central","American League West",
+               "National League East","National League Central","National League West"];
+  Object.keys(divs).sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);
+    return (ia<0?99:ia)-(ib<0?99:ib);}).forEach(div=>{
     const label=document.createElement("div");
-    label.className="div-label"; label.textContent=div.toUpperCase();
-    wrap.appendChild(label);
-
+    label.className="div-label"; label.textContent=div.toUpperCase(); wrap.appendChild(label);
     const grid=document.createElement("div"); grid.className="grid";
     divs[div].sort((a,b)=>b.winPct-a.winPct).forEach(t=>{
-      const last5 = t.games.slice(-5);
       const el=document.createElement("div"); el.className="team";
-      el.innerHTML = `
+      el.innerHTML=`
         <div class="row"><span class="team-name">${t.name}</span><span class="badge">${t.abbr}</span></div>
         <div class="row" style="margin-top:.4rem">
           <span style="color:var(--dim);font-size:.76rem">last ${t.gamesCounted} · ${t.streak}</span>
-          <span class="rec">${t.wins}-${t.losses}</span>
-        </div>
-        <div class="form">${last5.map(g=>`<span class="pill ${g.win?'w':'l'}">${g.win?'W':'L'}</span>`).join("")}</div>`;
-      el.onclick = ()=> showTeam(t.abbr);
-      grid.appendChild(el);
+          <span class="rec">${t.wins}-${t.losses}</span></div>
+        <div class="form">${t.games.slice(-5).map(g=>`<span class="pill ${g.win?'w':'l'}">${g.win?'W':'L'}</span>`).join("")}</div>`;
+      el.onclick=()=>showTeam(t.abbr); grid.appendChild(el);
     });
     wrap.appendChild(grid);
   });
 }
 
 function showTeam(abbr){
-  const t = TEAMS[abbr];
-  if(!t) return;
-  const rows = [...t.games].reverse();
-
-  document.getElementById("detailContent").innerHTML = `
+  const t=TEAMS[abbr]; if(!t) return;
+  const rows=[...t.games].reverse();
+  document.getElementById("detailContent").innerHTML=`
     <div class="card" style="padding:1.1rem">
       <div style="color:var(--dim);font-size:.7rem;letter-spacing:.08em">${t.division.toUpperCase()}</div>
       <div style="font-family:Oswald,sans-serif;font-size:1.7rem;font-weight:700">${t.name}</div>
       <div style="color:var(--amber);font-family:Oswald,sans-serif">${t.wins}-${t.losses} · ${(t.winPct*100).toFixed(1)}% · streak ${t.streak}</div>
     </div>
-
     <div class="stats">
       <div class="stat"><div class="stat-label">RUNS/GAME</div><div class="stat-value">${t.avgRunsFor}</div></div>
       <div class="stat"><div class="stat-label">ALLOWED/GAME</div><div class="stat-value">${t.avgRunsAgainst}</div></div>
       <div class="stat"><div class="stat-label">RUN DIFF</div><div class="stat-value">${t.runDiff>0?"+":""}${t.runDiff}</div></div>
       <div class="stat"><div class="stat-label">GAMES</div><div class="stat-value">${t.gamesCounted}</div></div>
     </div>
-
-    <div class="card">
-      <div class="section-title">LAST ${t.gamesCounted} GAMES — REAL RESULTS</div>
-      <div class="wrap">
-        <table>
-          <thead><tr><th>DATE</th><th>OPP</th><th>SCORE</th><th>W/L</th><th>DIFF</th></tr></thead>
-          <tbody>
-            ${rows.map(g=>`
-              <tr>
-                <td style="color:var(--dim)">${g.date}</td>
-                <td>${g.isHome?"vs":"@"} ${g.opponent}</td>
-                <td class="mono">${g.runsFor}-${g.runsAgainst}</td>
-                <td><span class="pill ${g.win?'w':'l'}" style="display:inline-flex">${g.win?'W':'L'}</span></td>
-                <td class="mono" style="color:${g.runsFor-g.runsAgainst>0?'var(--grass)':'var(--red)'}">
-                  ${g.runsFor-g.runsAgainst>0?"+":""}${g.runsFor-g.runsAgainst}
-                </td>
-              </tr>`).join("")}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-
+    <div class="card"><div class="section-title">LAST ${t.gamesCounted} GAMES</div>
+      <div class="wrap"><table>
+        <thead><tr><th>DATE</th><th>OPP</th><th>SCORE</th><th>W/L</th><th>DIFF</th></tr></thead>
+        <tbody>${rows.map(g=>`<tr>
+          <td style="color:var(--dim)">${g.date}</td>
+          <td>${g.isHome?"vs":"@"} ${g.opponent}</td>
+          <td class="mono">${g.runsFor}-${g.runsAgainst}</td>
+          <td><span class="pill ${g.win?'w':'l'}" style="display:inline-flex">${g.win?'W':'L'}</span></td>
+          <td class="mono" style="color:${g.runsFor-g.runsAgainst>0?'var(--grass)':'var(--red)'}">${g.runsFor-g.runsAgainst>0?"+":""}${g.runsFor-g.runsAgainst}</td>
+        </tr>`).join("")}</tbody>
+      </table></div></div>`;
   document.getElementById("listView").classList.add("hidden");
   document.getElementById("detailView").classList.remove("hidden");
   window.scrollTo(0,0);
 }
-
-document.getElementById("backBtn").onclick = ()=>{
+document.getElementById("backBtn").onclick=()=>{
   document.getElementById("detailView").classList.add("hidden");
-  document.getElementById("listView").classList.remove("hidden");
-  window.scrollTo(0,0);
-};
+  document.getElementById("listView").classList.remove("hidden"); window.scrollTo(0,0); };
 
+/* ============ odds ============ */
 async function loadOdds(){
   const dot=document.getElementById("oddsDot"), txt=document.getElementById("oddsText");
   try {
-    const res = await fetch("/api/odds");
-    const data = await res.json();
-    if(!res.ok) throw new Error(data.error || "Feed error");
-
-    const body=document.getElementById("liveBody");
-    body.innerHTML="";
-
+    const res=await fetch("/api/odds"); const data=await res.json();
+    if(!res.ok) throw new Error(data.error||"Feed error");
+    const body=document.getElementById("liveBody"); body.innerHTML="";
     data.games.forEach(g=>{
       const dk=g.books?.draftkings, fd=g.books?.fanduel;
-      const tot=dk?.total?.Over || fd?.total?.Over;
+      const tot=dk?.total?.Over||fd?.total?.Over;
       const dkA=dk?.moneyline?.[g.awayTeam], fdA=fd?.moneyline?.[g.awayTeam];
-      const dkBest = dkA!=null && fdA!=null && dkA>fdA;
-      const fdBest = dkA!=null && fdA!=null && fdA>dkA;
-
       const tr=document.createElement("tr");
       tr.innerHTML=`
         <td>${g.awayTeam} @ ${g.homeTeam}</td>
-        <td style="color:var(--dim)">${new Date(g.startTime).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</td>
-        <td class="mono ${dkBest?'best':''}">${dk?fmt(dk.moneyline[g.awayTeam])+" / "+fmt(dk.moneyline[g.homeTeam]):"—"}</td>
-        <td class="mono ${fdBest?'best':''}">${fd?fmt(fd.moneyline[g.awayTeam])+" / "+fmt(fd.moneyline[g.homeTeam]):"—"}</td>
+        <td style="color:var(--dim)">${new Date(g.startTime).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</td>
+        <td class="mono ${dkA!=null&&fdA!=null&&dkA>fdA?'best':''}">${dk?fmt(dk.moneyline[g.awayTeam])+" / "+fmt(dk.moneyline[g.homeTeam]):"—"}</td>
+        <td class="mono ${dkA!=null&&fdA!=null&&fdA>dkA?'best':''}">${fd?fmt(fd.moneyline[g.awayTeam])+" / "+fmt(fd.moneyline[g.homeTeam]):"—"}</td>
         <td class="mono">${tot?tot.line+" ("+fmt(tot.odds)+")":"—"}</td>`;
       body.appendChild(tr);
     });
-
     document.getElementById("liveCard").style.display="block";
     dot.className="dot live";
     txt.textContent=`Odds live — ${data.games.length} upcoming games · ${data.requestsRemaining} requests left this month`;
-  } catch(err){
-    dot.className="dot err";
-    txt.textContent="Couldn't load odds: "+err.message;
-  }
+  } catch(err){ dot.className="dot err"; txt.textContent="Couldn't load odds: "+err.message; }
+}
+
+/* ============ player props ============ */
+let CURRENT_LOG = null;
+
+const teamPick=document.getElementById("teamPick");
+const playerPick=document.getElementById("playerPick");
+const statPick=document.getElementById("statPick");
+const linePick=document.getElementById("linePick");
+
+teamPick.innerHTML=`<option value="">— choose —</option>`+
+  TEAM_LIST.map(([a,n])=>`<option value="${a}">${n}</option>`).join("");
+
+function setStatOptions(isPitcher){
+  const list=isPitcher?PITCH_STATS:HIT_STATS;
+  statPick.innerHTML=list.map(([k,l])=>`<option value="${k}">${l}</option>`).join("");
+}
+setStatOptions(false);
+
+function propStatus(kind,msg){
+  document.getElementById("propDot").className="dot"+(kind?" "+kind:"");
+  document.getElementById("propText").textContent=msg;
+}
+
+teamPick.onchange=async ()=>{
+  const abbr=teamPick.value;
+  document.getElementById("propResult").innerHTML="";
+  if(!abbr){ playerPick.innerHTML=`<option value="">— pick a team first —</option>`; return; }
+  propStatus("","Loading roster…");
+  try {
+    const res=await fetch(`/api/player?team=${abbr}`);
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||"Roster error");
+    const opts=[`<option value="">— choose a player —</option>`];
+    if(data.batters?.length){
+      opts.push(`<optgroup label="Batters">`+
+        data.batters.map(p=>`<option value="${p.id}" data-p="0">${p.name} (${p.position})</option>`).join("")+
+        `</optgroup>`);
+    }
+    if(data.pitchers?.length){
+      opts.push(`<optgroup label="Pitchers">`+
+        data.pitchers.map(p=>`<option value="${p.id}" data-p="1">${p.name} (P)</option>`).join("")+
+        `</optgroup>`);
+    }
+    playerPick.innerHTML=opts.join("");
+    propStatus("live",`${data.playerCount} players on the ${data.team.name} active roster`);
+  } catch(err){ propStatus("err","Couldn't load roster: "+err.message); }
+};
+
+playerPick.onchange=async ()=>{
+  const id=playerPick.value;
+  document.getElementById("propResult").innerHTML="";
+  if(!id) return;
+  const isPitcher=playerPick.selectedOptions[0]?.dataset.p==="1";
+  setStatOptions(isPitcher);
+  propStatus("","Loading game log…");
+  try {
+    const group=isPitcher?"pitching":"hitting";
+    const res=await fetch(`/api/player?id=${id}&group=${group}`);
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||"Log error");
+    if(!data.gameCount){
+      CURRENT_LOG=null;
+      propStatus("err",data.note||"No games found for this player this season.");
+      return;
+    }
+    CURRENT_LOG=data;
+    propStatus("live",`${data.player.name} — ${data.gameCount} games logged this season`);
+    renderProp();
+  } catch(err){ CURRENT_LOG=null; propStatus("err","Couldn't load log: "+err.message); }
+};
+
+statPick.onchange=renderProp;
+linePick.oninput=renderProp;
+
+function rateClass(pct){ return pct>=60?"hot":pct<=40?"cold":"mid"; }
+
+function renderProp(){
+  if(!CURRENT_LOG) return;
+  const stat=statPick.value;
+  const line=parseFloat(linePick.value);
+  const label=statPick.selectedOptions[0]?.textContent||stat;
+  const games=CURRENT_LOG.games;
+
+  const windows=[["Last 5",5],["Last 10",10],["Last 15",15],["Season",games.length]];
+  const rateCards=windows.map(([name,n])=>{
+    const slice=games.slice(-n).filter(g=>g[stat]!=null);
+    if(!slice.length) return "";
+    const over=slice.filter(g=>g[stat]>line).length;
+    const pct=Math.round(over/slice.length*100);
+    const avg=(slice.reduce((s,g)=>s+g[stat],0)/slice.length).toFixed(2);
+    return `<div class="rate">
+      <div class="rate-label">${name.toUpperCase()}</div>
+      <div class="rate-value ${rateClass(pct)}">${pct}%</div>
+      <div class="rate-sub">${over}/${slice.length} over · avg ${avg}</div>
+    </div>`;
+  }).join("");
+
+  const recent=games.slice(-25);
+  const max=Math.max(...recent.map(g=>g[stat]||0), line, 1);
+  const bars=recent.map(g=>{
+    const v=g[stat]||0;
+    const h=Math.max(3,Math.round(v/max*100));
+    const cls=v>line?"over":"under";
+    return `<div class="bar ${cls}" style="height:${h}%" title="${g.date} ${g.isHome?'vs':'@'} ${g.opponent}: ${v}"></div>`;
+  }).join("");
+
+  const rows=[...games].reverse();
+  const keys=Object.keys(games[0]).filter(k=>!["date","opponent","isHome"].includes(k));
+
+  document.getElementById("propResult").innerHTML=`
+    <div class="card" style="padding:1.1rem;margin-bottom:1rem">
+      <div style="font-family:Oswald,sans-serif;font-size:1.5rem;font-weight:700">${CURRENT_LOG.player.name}</div>
+      <div style="color:var(--dim);font-size:.8rem">${CURRENT_LOG.player.team||""} · ${CURRENT_LOG.player.position||""} · ${CURRENT_LOG.season} season</div>
+      <div style="color:var(--amber);font-family:Oswald,sans-serif;margin-top:.4rem">${label} — over ${line}</div>
+    </div>
+
+    <div class="rates">${rateCards}</div>
+
+    <div class="card" style="margin-bottom:1rem">
+      <div class="section-title">${label.toUpperCase()} — LAST ${recent.length} GAMES</div>
+      <div class="bars">${bars}</div>
+      <div class="lineMark">line ${line}</div>
+      <div style="padding:.6rem 1rem;color:var(--dim);font-size:.7rem">
+        Green cleared the line, red didn't. Oldest on the left.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">FULL GAME LOG</div>
+      <div class="wrap"><table>
+        <thead><tr><th>DATE</th><th>OPP</th>${keys.map(k=>`<th>${k}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map(g=>`<tr>
+          <td style="color:var(--dim)">${g.date}</td>
+          <td>${g.isHome?"vs":"@"} ${(g.opponent||"").replace(/^(New York|Los Angeles|San |St\. |Chicago |Kansas City |Tampa Bay )/,"")}</td>
+          ${keys.map(k=>`<td class="mono" style="${k===stat?'color:var(--amber);font-weight:600':''}">${g[k]??"—"}</td>`).join("")}
+        </tr>`).join("")}</tbody>
+      </table></div>
+    </div>`;
 }
 
 loadGames();
