@@ -90,6 +90,19 @@
   .vflat { border-color:var(--amber); }
   .gapnum { font-family:Oswald,sans-serif; font-size:1.9rem; }
 
+  .vs { display:grid; grid-template-columns:1fr auto 1fr; gap:1rem; align-items:center; padding:1.2rem 1rem; }
+  .vs-side { min-width:0; }
+  .vs-name { font-family:Oswald,sans-serif; font-size:1.2rem; font-weight:700; }
+  .vs-sub { color:var(--dim); font-size:.75rem; }
+  .vs-mid { font-family:Oswald,sans-serif; color:var(--amber); font-size:1.1rem; }
+  .cmp { display:grid; grid-template-columns:1fr auto 1fr; gap:.5rem; align-items:center;
+         padding:.5rem 1rem; border-top:1px solid var(--line); font-size:.9rem; }
+  .cmp-label { text-align:center; color:var(--dim); font-size:.66rem; letter-spacing:.05em; white-space:nowrap; }
+  .cmp-l { text-align:right; font-family:ui-monospace,monospace; }
+  .cmp-r { text-align:left; font-family:ui-monospace,monospace; }
+  .edgeBadge { display:inline-block; padding:.25rem .6rem; border-radius:6px;
+               font-family:Oswald,sans-serif; font-size:.8rem; }
+
   .markets { display:flex; gap:.3rem; overflow-x:auto; padding:.6rem 1rem; border-bottom:1px solid var(--line);
              -webkit-overflow-scrolling:touch; scrollbar-width:none; }
   .markets::-webkit-scrollbar { display:none; }
@@ -140,6 +153,7 @@
 <div class="tabs">
   <button class="tab on" id="tabGames">Games &amp; Odds</button>
   <button class="tab" id="tabProps">Player Props</button>
+  <button class="tab" id="tabMatch">Matchup</button>
 </div>
 
 <!-- ============ GAMES & ODDS ============ -->
@@ -203,6 +217,22 @@
   <div id="propResult"></div>
 </div>
 
+<!-- ============ MATCHUP ============ -->
+<div id="viewMatch" class="hidden">
+  <div class="card" style="margin-bottom:1rem">
+    <div class="section-title">PICK A MATCHUP</div>
+    <div class="controls">
+      <div class="field"><label>GAME</label><select id="gamePick"><option value="">— loading —</option></select></div>
+      <div class="field"><label>BATTING SIDE</label><select id="sidePick"><option value="">— pick a game —</option></select></div>
+      <div class="field"><label>BATTER</label><select id="batterPick"><option value="">— pick a side —</option></select></div>
+    </div>
+    <div class="status" style="border-top:1px solid var(--line)">
+      <span class="dot" id="mDot"></span><span id="mText">Loading upcoming games…</span>
+    </div>
+  </div>
+  <div id="matchResult"></div>
+</div>
+
 <p class="note">
   Game results, player stats and opponent profiles are real, from the official MLB Stats API.
   Live odds come from DraftKings and FanDuel via The Odds API. Hit rates and matchup splits
@@ -213,7 +243,7 @@
 
 <script>
 /* ============ shared ============ */
-let TEAMS=null, CONTEXT=null, PITCHERS=null, CURRENT_LOG=null;
+let TEAMS=null, CONTEXT=null, PITCHERS=null, CURRENT_LOG=null, SLATE=null;
 const fmt = n => n==null ? "—" : (n>0 ? "+"+n : ""+n);
 
 const TEAM_LIST = [
@@ -238,13 +268,16 @@ const PITCH_STATS=[["strikeOuts","Strikeouts"],["inningsPitched","Innings Pitche
   ["numberOfPitches","Pitch Count"],["battersFaced","Batters Faced"]];
 
 /* ============ tabs ============ */
-const tabGames=document.getElementById("tabGames"), tabProps=document.getElementById("tabProps");
-tabGames.onclick=()=>{tabGames.classList.add("on");tabProps.classList.remove("on");
-  document.getElementById("viewGames").classList.remove("hidden");
-  document.getElementById("viewProps").classList.add("hidden");};
-tabProps.onclick=()=>{tabProps.classList.add("on");tabGames.classList.remove("on");
-  document.getElementById("viewProps").classList.remove("hidden");
-  document.getElementById("viewGames").classList.add("hidden");};
+const TABS=[["tabGames","viewGames"],["tabProps","viewProps"],["tabMatch","viewMatch"]];
+TABS.forEach(([btn,view])=>{
+  document.getElementById(btn).onclick=()=>{
+    TABS.forEach(([b,v])=>{
+      document.getElementById(b).classList.toggle("on", b===btn);
+      document.getElementById(v).classList.toggle("hidden", v!==view);
+    });
+    if(view==="viewMatch" && !SLATE) loadSlate();
+  };
+});
 
 /* ============ team results ============ */
 async function loadGames(){
@@ -1066,6 +1099,171 @@ function shortName(n){
     "Washington Nationals":"Nationals"
   };
   return map[n] || n || "";
+}
+
+/* ============ matchup ============ */
+const gamePick=document.getElementById("gamePick");
+const sidePick=document.getElementById("sidePick");
+const batterPick=document.getElementById("batterPick");
+
+function mStatus(kind,msg){
+  document.getElementById("mDot").className="dot"+(kind?" "+kind:"");
+  document.getElementById("mText").textContent=msg;
+}
+
+async function loadSlate(){
+  mStatus("","Loading upcoming games…");
+  try{
+    const res=await fetch("/api/matchup?slate=1"); const data=await res.json();
+    if(!res.ok) throw new Error(data.error||"Slate error");
+    SLATE=data;
+    if(!data.gameCount){ mStatus("err","No games scheduled in the next two days."); return; }
+    gamePick.innerHTML=`<option value="">— choose a game —</option>`+
+      data.games.map((g,i)=>{
+        const t=g.startTime?new Date(g.startTime).toLocaleString([],{weekday:"short",hour:"numeric",minute:"2-digit"}):g.date;
+        return `<option value="${i}">${shortName(g.away.team)} @ ${shortName(g.home.team)} · ${t}</option>`;
+      }).join("");
+    mStatus("live",`${data.gameCount} games · ${data.withBothStarters} with both starters announced`);
+  }catch(err){ mStatus("err","Couldn't load games: "+err.message); }
+}
+
+gamePick.onchange=()=>{
+  document.getElementById("matchResult").innerHTML="";
+  batterPick.innerHTML=`<option value="">— pick a side —</option>`;
+  const g=SLATE?.games?.[gamePick.value];
+  if(!g){ sidePick.innerHTML=`<option value="">— pick a game —</option>`; return; }
+  const opts=[`<option value="">— choose —</option>`];
+  if(g.away.starterId) opts.push(`<option value="home">${shortName(g.home.team)} batters vs ${g.away.starter} (${g.away.throws||"?"}HP)</option>`);
+  if(g.home.starterId) opts.push(`<option value="away">${shortName(g.away.team)} batters vs ${g.home.starter} (${g.home.throws||"?"}HP)</option>`);
+  sidePick.innerHTML=opts.join("");
+  if(opts.length===1) mStatus("err","Starters not announced for this game yet.");
+  else mStatus("live",`${g.venue||""} · ${g.status}`);
+};
+
+sidePick.onchange=async()=>{
+  document.getElementById("matchResult").innerHTML="";
+  const g=SLATE?.games?.[gamePick.value];
+  const side=sidePick.value;
+  if(!g||!side){ batterPick.innerHTML=`<option value="">— pick a side —</option>`; return; }
+  const teamName = side==="home" ? g.home.team : g.away.team;
+  const abbr = ABBR_BY_NAME[teamName];
+  if(!abbr){ mStatus("err","Couldn't match that team."); return; }
+  mStatus("","Loading roster…");
+  try{
+    const res=await fetch(`/api/player?team=${abbr}`); const data=await res.json();
+    if(!res.ok) throw new Error(data.error||"Roster error");
+    batterPick.innerHTML=`<option value="">— choose a batter —</option>`+
+      (data.batters||[]).map(p=>`<option value="${p.id}">${p.name} (${p.position})</option>`).join("");
+    mStatus("live",`${(data.batters||[]).length} batters on the ${shortName(teamName)} roster`);
+  }catch(err){ mStatus("err","Couldn't load roster: "+err.message); }
+};
+
+batterPick.onchange=async()=>{
+  const g=SLATE?.games?.[gamePick.value];
+  const side=sidePick.value;
+  const bId=batterPick.value;
+  if(!g||!side||!bId){ document.getElementById("matchResult").innerHTML=""; return; }
+  const pId = side==="home" ? g.away.starterId : g.home.starterId;
+  mStatus("","Loading comparison…");
+  try{
+    const res=await fetch(`/api/matchup?batter=${bId}&pitcher=${pId}`);
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||"Matchup error");
+    renderMatchup(data,g);
+    mStatus("live",`${data.batter.name} vs ${data.pitcher.name}`);
+  }catch(err){ mStatus("err","Couldn't load comparison: "+err.message); }
+};
+
+function cmpRow(label,l,r,highlight){
+  return `<div class="cmp" ${highlight?'style="background:var(--panelAlt)"':""}>
+    <div class="cmp-l">${l??"—"}</div>
+    <div class="cmp-label">${label}</div>
+    <div class="cmp-r">${r??"—"}</div>
+  </div>`;
+}
+
+function renderMatchup(d,game){
+  const b=d.batter, p=d.pitcher;
+  const bSplit = b.relevantSplit ? b.splits?.[b.relevantSplit] : null;
+  const pSplit = p.relevantSplit ? p.splits?.[p.relevantSplit] : null;
+  const adv = d.platoon.batterAdvantage;
+  const advCol = adv===true ? "var(--grass)" : adv===false ? "var(--red)" : "var(--dim)";
+
+  const park = game?.venueId && PITCHERS?.parks?.[game.venueId];
+
+  const h2h=d.h2h;
+  const relCol = h2h.reliability==="moderate" ? "var(--amber)"
+    : h2h.reliability==="none" ? "var(--dim)" : "var(--red)";
+
+  document.getElementById("matchResult").innerHTML=`
+    <div class="card" style="margin-bottom:1rem">
+      <div class="vs">
+        <div class="vs-side">
+          <div class="vs-name">${b.name}</div>
+          <div class="vs-sub">${b.team} · ${b.position} · bats ${b.bats||"?"}</div>
+        </div>
+        <div class="vs-mid">vs</div>
+        <div class="vs-side" style="text-align:right">
+          <div class="vs-name">${p.name}</div>
+          <div class="vs-sub">${p.team} · throws ${p.throws||"?"}</div>
+        </div>
+      </div>
+      <div style="padding:0 1rem 1rem;text-align:center">
+        <span class="edgeBadge" style="background:${advCol};color:#000">${d.platoon.label}</span>
+        ${park?`<div style="color:var(--dim);font-size:.75rem;margin-top:.5rem">
+          ${park.name} · park factor ${park.factor} ${park.factor>=103?"(hitter friendly)":park.factor<=97?"(pitcher friendly)":"(neutral)"}</div>`:""}
+      </div>
+    </div>
+
+    ${(bSplit&&pSplit)?`<div class="card" style="margin-bottom:1rem">
+      <div class="section-title">THE SPLIT THAT MATTERS TONIGHT
+        <span style="color:var(--dim);font-size:.7rem;font-family:Inter,sans-serif;font-weight:400">
+          — ${b.name} ${bSplit.label||""} · ${p.name} ${pSplit.label||""}</span></div>
+      ${cmpRow("SAMPLE", bSplit.plateAppearances?bSplit.plateAppearances+" PA":"—", pSplit.battersFaced?pSplit.battersFaced+" BF":"—")}
+      ${cmpRow("AVG", bSplit.avg, pSplit.avg, true)}
+      ${cmpRow("OPS", bSplit.ops, pSplit.ops, true)}
+      ${cmpRow("HITS", bSplit.hits, pSplit.hits)}
+      ${cmpRow("HOME RUNS", bSplit.homeRuns, pSplit.homeRuns)}
+      ${cmpRow("STRIKEOUTS", bSplit.strikeOuts, pSplit.strikeOuts)}
+      ${cmpRow("WALKS", bSplit.baseOnBalls, pSplit.baseOnBalls)}
+      <div class="callout">
+        These are season-long splits against this handedness — typically a few hundred
+        plate appearances each, which is enough to mean something. The batter's AVG and OPS
+        are what he does against ${p.throws==="L"?"lefties":"righties"}; the pitcher's are
+        what he allows to ${b.bats==="L"?"left":b.bats==="S"?"switch":"right"}-handed batters.
+      </div>
+    </div>`:`<div class="card" style="margin-bottom:1rem"><div class="callout">
+      Handedness splits unavailable for one of these players this season.</div></div>`}
+
+    <div class="card" style="margin-bottom:1rem">
+      <div class="section-title">HEAD TO HEAD — CAREER
+        <span style="color:${relCol};font-size:.72rem;font-family:Inter,sans-serif;font-weight:400">
+          — reliability: ${h2h.reliability}</span></div>
+      ${h2h.plateAppearances>0?`
+        <div class="stats" style="margin:1rem">
+          <div class="stat"><div class="stat-label">PA</div><div class="stat-value">${h2h.plateAppearances}</div></div>
+          <div class="stat"><div class="stat-label">AVG</div><div class="stat-value">${h2h.avg??"—"}</div></div>
+          <div class="stat"><div class="stat-label">HITS</div><div class="stat-value">${h2h.hits}</div></div>
+          <div class="stat"><div class="stat-label">HR</div><div class="stat-value">${h2h.homeRuns}</div></div>
+          <div class="stat"><div class="stat-label">K</div><div class="stat-value">${h2h.strikeOuts}</div></div>
+        </div>`:""}
+      <div class="callout" style="border-top:1px solid var(--line)">
+        <strong style="color:${relCol}">${h2h.note}</strong>
+      </div>
+    </div>
+
+    <details class="fold">
+      <summary>FULL SEASON LINES</summary>
+      <div class="foldbody">
+        ${cmpRow("AVG", b.season?.avg, p.season?.avg)}
+        ${cmpRow("OPS / WHIP", b.season?.ops, p.season?.whip)}
+        ${cmpRow("HR", b.season?.homeRuns, p.season?.homeRuns)}
+        ${cmpRow("K", b.season?.strikeOuts, p.season?.strikeOuts)}
+        ${cmpRow("BB", b.season?.baseOnBalls, p.season?.baseOnBalls)}
+        ${cmpRow("PA / IP", b.season?.plateAppearances, p.season?.inningsPitched)}
+        ${cmpRow("— / ERA", "—", p.season?.era)}
+      </div>
+    </details>`;
 }
 
 loadGames();
