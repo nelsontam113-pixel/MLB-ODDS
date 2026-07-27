@@ -81,6 +81,14 @@
   .neutralM { color:var(--dim); }
   .callout { padding:.9rem 1rem; font-size:.82rem; line-height:1.5; border-top:1px solid var(--line); color:var(--dim); }
   .callout strong { color:var(--chalk); }
+
+  .verdict { border-radius:10px; padding:1rem; margin-bottom:1rem; border:1px solid var(--line); background:var(--panel); }
+  .verdict-head { font-family:Oswald,sans-serif; font-size:1.35rem; }
+  .verdict-line { color:var(--dim); font-size:.82rem; margin-top:.35rem; line-height:1.5; }
+  .vgood { border-color:var(--grass); }
+  .vbad { border-color:var(--red); }
+  .vflat { border-color:var(--amber); }
+  .gapnum { font-family:Oswald,sans-serif; font-size:1.9rem; }
 </style>
 </head>
 <body>
@@ -128,6 +136,7 @@
       <div class="field"><label>PLAYER</label><select id="playerPick"><option value="">— pick a team first —</option></select></div>
       <div class="field"><label>STAT</label><select id="statPick"></select></div>
       <div class="field"><label>PROP LINE</label><input type="number" id="linePick" value="1.5" step="0.5" min="0"></div>
+      <div class="field"><label>ODDS (AMERICAN)</label><input type="number" id="oddsPick" value="-110" step="5" placeholder="-110"></div>
     </div>
     <div class="status" style="border-top:1px solid var(--line)">
       <span class="dot" id="propDot"></span><span id="propText">Pick a team to start.</span>
@@ -420,8 +429,75 @@ playerPick.onchange=async()=>{
 
 statPick.onchange=renderProp;
 linePick.oninput=renderProp;
+document.getElementById("oddsPick").oninput=renderProp;
 
-const rateClass=p=>p>=60?"hot":p<=40?"cold":"mid";
+// Which hand did the opposing starter throw with, and did the batter have the platoon edge?
+function handContext(game, playerId){
+  if(!PITCHERS || !game.gamePk) return null;
+  const g=PITCHERS.games?.[game.gamePk];
+  if(!g) return null;
+  const side = game.isHome ? g.away : g.home;
+  const spId = side?.pitcherId;
+  if(!spId) return null;
+  const throws = PITCHERS.hands?.[spId]?.throws || PITCHERS.pitchers?.[spId]?.throws || null;
+  if(!throws) return null;
+  const bats = PITCHERS.hands?.[playerId]?.bats || null;
+  // Switch hitters bat opposite the pitcher, so they always hold the platoon edge.
+  const advantage = bats==="S" ? true : (bats && throws ? bats!==throws : null);
+  return { throws, bats, advantage };
+}
+
+// Park factor for the venue the game was played in.
+function parkContext(game){
+  if(!PITCHERS || !game.gamePk) return null;
+  const g=PITCHERS.games?.[game.gamePk];
+  if(!g?.venueId) return null;
+  const park=PITCHERS.parks?.[g.venueId];
+  if(!park) return { name:g.venue||"Unknown park", factor:null };
+  return { name:park.name, factor:park.factor,
+           tier: park.factor>=103 ? "hitter" : park.factor<=97 ? "pitcher" : "neutral" };
+}
+
+// Build a row of comparison cards from a set of named game buckets.
+function splitCards(buckets, stat, line, be){
+  return buckets.map(([name, slice, sub])=>{
+    const clean=slice.filter(g=>g[stat]!=null);
+    if(!clean.length) return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
+      <div class="rate-value neutralM">—</div><div class="rate-sub">no games</div></div>`;
+    const over=clean.filter(g=>g[stat]>line).length;
+    const pct=Math.round(over/clean.length*100);
+    const av=(clean.reduce((s2,g)=>s2+g[stat],0)/clean.length).toFixed(2);
+    return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
+      <div class="rate-value ${rateClass(pct,be)}">${pct}%</div>
+      <div class="rate-sub">${over}/${clean.length} over · avg ${av}${sub?" · "+sub:""}</div></div>`;
+  }).join("");
+}
+
+// American odds -> the win rate you need just to break even.
+// -300 means risking 300 to win 100, so you need 300/(300+100) = 75%.
+// +180 means risking 100 to win 180, so you need 100/(100+180) = 35.7%.
+function breakEven(american){
+  const o=Number(american);
+  if(!Number.isFinite(o) || o===0) return null;
+  return o<0 ? (-o)/((-o)+100) : 100/(100+o);
+}
+
+// What one unit staked returns on average at this hit rate and price.
+function edgePerUnit(hitRate, american){
+  const o=Number(american);
+  if(!Number.isFinite(o) || o===0) return null;
+  const profit = o<0 ? 100/(-o) : o/100;   // profit per 1 unit risked on a win
+  return hitRate*profit - (1-hitRate);
+}
+
+// Colour cards against the actual break-even, not an arbitrary threshold.
+function rateClass(p, be){
+  if(be==null) return p>=60?"hot":p<=40?"cold":"mid";
+  const bar=be*100;
+  if(p>bar+2) return "hot";
+  if(p<bar-2) return "cold";
+  return "mid";
+}
 
 function renderProp(){
   if(!CURRENT_LOG) return;
@@ -430,6 +506,48 @@ function renderProp(){
   const label=statPick.selectedOptions[0]?.textContent||stat;
   const group=CURRENT_LOG.group;
   const games=CURRENT_LOG.games;
+
+  const odds=document.getElementById("oddsPick").value;
+  const be=breakEven(odds);
+
+  // Season rate is the one with enough games behind it to compare to a price.
+  const seasonSlice=games.filter(g=>g[stat]!=null);
+  const seasonOver=seasonSlice.filter(g=>g[stat]>line).length;
+  const seasonRate=seasonSlice.length?seasonOver/seasonSlice.length:null;
+
+  let verdictBlock="";
+  if(be!=null && seasonRate!=null){
+    const gap=(seasonRate-be)*100;
+    const edge=edgePerUnit(seasonRate,odds);
+    const cls = gap>2 ? "vgood" : gap < -2 ? "vbad" : "vflat";
+    const col = gap>2 ? "var(--grass)" : gap < -2 ? "var(--red)" : "var(--amber)";
+    const headline = gap>2
+      ? "Historical rate beat this price"
+      : gap < -2
+        ? "Historical rate did NOT beat this price"
+        : "Essentially a coin flip at this price";
+
+    verdictBlock=`<div class="verdict ${cls}">
+      <div class="verdict-head" style="color:${col}">${headline}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:1.6rem;margin-top:.7rem;align-items:baseline">
+        <div><div class="stat-label">SEASON HIT RATE</div>
+          <div class="gapnum">${(seasonRate*100).toFixed(1)}%</div>
+          <div class="rate-sub">${seasonOver}/${seasonSlice.length} games</div></div>
+        <div><div class="stat-label">BREAK-EVEN AT ${odds>0?"+"+odds:odds}</div>
+          <div class="gapnum">${(be*100).toFixed(1)}%</div>
+          <div class="rate-sub">needed just to stay level</div></div>
+        <div><div class="stat-label">GAP</div>
+          <div class="gapnum" style="color:${col}">${gap>0?"+":""}${gap.toFixed(1)}%</div>
+          <div class="rate-sub">${edge>=0?"+":""}${(edge*100).toFixed(1)}% per unit staked</div></div>
+      </div>
+      <div class="verdict-line">
+        A high hit rate is not the same as a good bet. At ${odds>0?"+"+odds:odds} you must win
+        <strong>${(be*100).toFixed(1)}%</strong> of the time simply to break even. This compares
+        what already happened against that bar — it is not a prediction, the sample is one
+        season, and the price you actually get may differ.
+      </div>
+    </div>`;
+  }
 
   // recency windows
   const windows=[["Last 5",5],["Last 10",10],["Last 15",15],["Season",games.length]];
@@ -440,12 +558,16 @@ function renderProp(){
     const pct=Math.round(over/slice.length*100);
     const av=(slice.reduce((s,g)=>s+g[stat],0)/slice.length).toFixed(2);
     return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
-      <div class="rate-value ${rateClass(pct)}">${pct}%</div>
+      <div class="rate-value ${rateClass(pct,be)}">${pct}%</div>
       <div class="rate-sub">${over}/${slice.length} over · avg ${av}</div></div>`;
   }).join("");
 
   // matchup splits
-  const withCtx=games.map(g=>({...g,_m:matchupFor(g,group)}));
+  const pid=CURRENT_LOG.player.id;
+  const withCtx=games.map(g=>({...g,
+    _m:matchupFor(g,group),
+    _h:handContext(g,pid),
+    _p:parkContext(g)}));
   const tiers=[["Soft matchups","soft"],["Neutral","neutral"],["Tough matchups","tough"]];
   const splitCards=CONTEXT ? tiers.map(([name,tier])=>{
     const slice=withCtx.filter(g=>g._m?.tier===tier && g[stat]!=null);
@@ -455,7 +577,7 @@ function renderProp(){
     const pct=Math.round(over/slice.length*100);
     const av=(slice.reduce((s,g)=>s+g[stat],0)/slice.length).toFixed(2);
     return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
-      <div class="rate-value ${rateClass(pct)}">${pct}%</div>
+      <div class="rate-value ${rateClass(pct,be)}">${pct}%</div>
       <div class="rate-sub">${over}/${slice.length} over · avg ${av}</div></div>`;
   }).join("") : "";
 
@@ -484,6 +606,37 @@ function renderProp(){
     return `<div class="bar ${v>line?"over":"under"}" style="height:${h}%"
       data-info="${info.replace(/"/g,"&quot;")}" data-i="${i}"></div>`;
   }).join("");
+
+  // Handedness and park splits.
+  let handBlock="", parkBlock="";
+  if(PITCHERS && group!=="pitching"){
+    const vsL=withCtx.filter(g=>g._h?.throws==="L");
+    const vsR=withCtx.filter(g=>g._h?.throws==="R");
+    const adv=withCtx.filter(g=>g._h?.advantage===true);
+    const dis=withCtx.filter(g=>g._h?.advantage===false);
+    if(vsL.length||vsR.length){
+      const bats=PITCHERS.hands?.[pid]?.bats;
+      const batsLabel = bats==="S" ? "switch hitter" : bats==="L" ? "left-handed batter" : bats==="R" ? "right-handed batter" : "unknown";
+      handBlock=`<div class="div-label">BY PITCHER HANDEDNESS
+        <span style="color:var(--dim);font-weight:400;letter-spacing:0"> — ${batsLabel}</span></div>
+        <div class="rates">${splitCards([
+          ["vs LHP", vsL, ""], ["vs RHP", vsR, ""],
+          ["Platoon edge", adv, ""], ["No edge", dis, ""]
+        ], stat, line, be)}</div>`;
+    }
+  }
+  if(PITCHERS){
+    const hit=withCtx.filter(g=>g._p?.tier==="hitter");
+    const neu=withCtx.filter(g=>g._p?.tier==="neutral");
+    const pit=withCtx.filter(g=>g._p?.tier==="pitcher");
+    if(hit.length||neu.length||pit.length){
+      parkBlock=`<div class="div-label">BY BALLPARK
+        <span style="color:var(--dim);font-weight:400;letter-spacing:0"> — 100 is neutral; approximate figures</span></div>
+        <div class="rates">${splitCards([
+          ["Hitter parks (103+)", hit, ""], ["Neutral", neu, ""], ["Pitcher parks (97-)", pit, ""]
+        ], stat, line, be)}</div>`;
+    }
+  }
 
   // A quick look at who he's actually been facing lately.
   let spSummary="";
@@ -524,10 +677,12 @@ function renderProp(){
     <div class="card" style="padding:1.1rem;margin-bottom:1rem">
       <div style="font-family:Oswald,sans-serif;font-size:1.5rem;font-weight:700">${CURRENT_LOG.player.name}</div>
       <div style="color:var(--dim);font-size:.8rem">${CURRENT_LOG.player.team||""} · ${CURRENT_LOG.player.position||""} · ${CURRENT_LOG.season} season</div>
-      <div style="color:var(--amber);font-family:Oswald,sans-serif;margin-top:.4rem">${label} — over ${line}</div>
+      <div style="color:var(--amber);font-family:Oswald,sans-serif;margin-top:.4rem">${label} — over ${line} at ${odds>0?"+"+odds:odds}</div>
     </div>
 
-    <div class="div-label">BY RECENCY</div>
+    ${verdictBlock}
+
+    <div class="div-label">BY RECENCY${be!=null?` <span style="color:var(--dim);font-weight:400;letter-spacing:0"> — break-even is ${(be*100).toFixed(1)}%</span>`:""}</div>
     <div class="rates">${rateCards}</div>
 
     ${CONTEXT?`<div class="div-label">BY MATCHUP DIFFICULTY</div>
@@ -539,6 +694,9 @@ function renderProp(){
           ? `Tiers use the <strong>individual starting pitcher faced</strong>, ranked among the ${PITCHERS.leagueAvg.starterCount} pitchers with 5+ starts. <strong>Soft</strong> = bottom third by ERA. <strong>Tough</strong> = top third. League average starter ERA is <strong>${PITCHERS.leagueAvg.starterEra}</strong>, K/9 ${PITCHERS.leagueAvg.starterK9}.`
           : `Starting pitcher data unavailable — falling back to team staff ERA.`}
       </div>`}</div>`:""}
+
+    ${handBlock}
+    ${parkBlock}
 
     ${spSummary}
 
@@ -554,12 +712,16 @@ function renderProp(){
     <div class="card">
       <div class="section-title">FULL GAME LOG</div>
       <div class="wrap"><table>
-        <thead><tr><th>DATE</th><th>OPP</th><th>${ctxHeader}</th>${keys.map(k=>`<th>${k}</th>`).join("")}</tr></thead>
+        <thead><tr><th>DATE</th><th>OPP</th><th>${ctxHeader}</th><th>HAND</th><th>PARK</th>${keys.map(k=>`<th>${k}</th>`).join("")}</tr></thead>
         <tbody>${rows.map(g=>`<tr>
           <td style="color:var(--dim)">${g.date}</td>
           <td>${g.isHome?"vs":"@"} ${shortName(g.opponent)}</td>
           <td class="${g._m?(g._m.tier==="soft"?"soft":g._m.tier==="tough"?"tough":"neutralM"):"neutralM"}">
             ${g._m?`${g._m.headline}<div style="font-size:.68rem;opacity:.75;font-weight:400">${g._m.sub}</div>`:"—"}</td>
+          <td class="${g._h?.advantage===true?"soft":g._h?.advantage===false?"tough":"neutralM"}">
+            ${g._h?`${g._h.throws}HP${g._h.advantage===true?" ✓":g._h.advantage===false?" ✗":""}`:"—"}</td>
+          <td class="${g._p?.tier==="hitter"?"soft":g._p?.tier==="pitcher"?"tough":"neutralM"}">
+            ${g._p?`${g._p.factor??"—"}<div style="font-size:.68rem;opacity:.75;font-weight:400">${g._p.name}</div>`:"—"}</td>
           ${keys.map(k=>`<td class="mono" style="${k===stat?'color:var(--amber);font-weight:600':''}">${g[k]??"—"}</td>`).join("")}
         </tr>`).join("")}</tbody>
       </table></div>
