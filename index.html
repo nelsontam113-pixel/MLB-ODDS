@@ -98,8 +98,10 @@
   details.fold[open] > summary::after { content:"▾ hide"; }
   details.fold > summary:hover { color:var(--amber); }
   .foldbody { border-top:1px solid var(--line); }
-  .chartwrap { padding:1rem .5rem .5rem; }
-  .legend { display:flex; gap:1.2rem; flex-wrap:wrap; padding:0 1rem 1rem; font-size:.72rem; color:var(--dim); }
+  .chartwrap { padding:1.1rem .6rem .3rem; }
+  .legend { display:flex; gap:1.1rem; flex-wrap:wrap; padding:.4rem 1rem 1rem;
+            font-size:.75rem; color:var(--dim); align-items:center; line-height:1.5; }
+  .legend > span:first-child { flex-basis:100%; font-size:.86rem; }
   .swatch { display:inline-block; width:14px; height:3px; vertical-align:middle; margin-right:.35rem; }
 </style>
 </head>
@@ -148,6 +150,12 @@
       <div class="field"><label>PLAYER</label><select id="playerPick"><option value="">— pick a team first —</option></select></div>
       <div class="field"><label>STAT</label><select id="statPick"></select></div>
       <div class="field"><label>PROP LINE</label><input type="number" id="linePick" value="1.5" step="0.5" min="0"></div>
+      <div class="field"><label>TREND SMOOTHING</label>
+        <select id="smoothPick">
+          <option value="5">5 games (reactive)</option>
+          <option value="10" selected>10 games (balanced)</option>
+          <option value="20">20 games (calm)</option>
+        </select></div>
       <div class="field"><label>ODDS FORMAT</label>
         <select id="oddsFmt"><option value="american">American (-110)</option><option value="decimal">Decimal (1.91)</option></select></div>
       <div class="field"><label id="oddsLabel">ODDS</label>
@@ -445,6 +453,7 @@ playerPick.onchange=async()=>{
 statPick.onchange=renderProp;
 linePick.oninput=renderProp;
 document.getElementById("oddsPick").oninput=renderProp;
+document.getElementById("smoothPick").onchange=renderProp;
 
 // Switching format converts whatever is already typed, rather than leaving a
 // nonsense value like "-110" sitting in a decimal field.
@@ -470,58 +479,92 @@ document.getElementById("oddsFmt").onchange=function(){
 };
 document.getElementById("oddsLabel").textContent="ODDS (AMERICAN)";
 
-// Rolling-average line chart. Plain SVG, no library.
-// Shows the trend against the prop line, which reads far better than 96 bars.
+// Rolling-average chart. Plain SVG, no library.
+// The shaded band is the point: green where the trend sits above the prop line,
+// red where it sits below. You can read form at a glance without counting dots.
 function lineChart(games, stat, line, windowSize){
-  const vals=games.map(g=>g[stat]).filter(v=>v!=null);
-  if(vals.length<3) return "";
+  const pts=games.filter(g=>g[stat]!=null);
+  if(pts.length<3) return "";
 
-  const W=700, H=200, padL=34, padR=12, padT=12, padB=26;
-  const n=vals.length;
+  const W=720, H=250, padL=40, padR=16, padT=18, padB=40;
+  const n=pts.length;
+  const vals=pts.map(g=>g[stat]);
 
-  // rolling average
   const roll=vals.map((_,i)=>{
     const from=Math.max(0,i-windowSize+1);
-    const slice=vals.slice(from,i+1);
-    return slice.reduce((a,b)=>a+b,0)/slice.length;
+    const sl=vals.slice(from,i+1);
+    return sl.reduce((a,b)=>a+b,0)/sl.length;
   });
 
-  const maxV=Math.max(...vals, line, ...roll)*1.1 || 1;
-  const x=i=> padL + (i/(n-1))*(W-padL-padR);
+  const maxV=Math.max(...vals, line*1.6, ...roll)*1.08 || 1;
+  const x=i=> padL + (n===1?0:(i/(n-1))*(W-padL-padR));
   const y=v=> H-padB - (v/maxV)*(H-padT-padB);
+  const yLine=y(line);
 
-  const rollPath=roll.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
-  const dots=vals.map((v,i)=>
-    `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.2"
-      fill="${v>line?"#3C6E47":"#E4573D"}" opacity=".75"/>`).join("");
+  // Closed area between the rolling line and the prop line.
+  const area =
+    roll.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("") +
+    `L${x(n-1).toFixed(1)},${yLine.toFixed(1)}L${x(0).toFixed(1)},${yLine.toFixed(1)}Z`;
 
-  // y gridlines
-  const ticks=[0,0.25,0.5,0.75,1].map(f=>{
+  const uid="c"+Math.random().toString(36).slice(2,8);
+
+  // Only plot individual games when there aren't too many to read.
+  const showDots = n<=45;
+  const dots = showDots ? vals.map((v,i)=>
+    `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.6"
+       fill="${v>line?"#4E8C5B":"#E4573D"}" opacity=".8"/>`).join("") : "";
+
+  // Horizontal gridlines, sparse.
+  const grid=[0.5,1].map(f=>{
     const v=maxV*f;
-    return `<line x1="${padL}" y1="${y(v)}" x2="${W-padR}" y2="${y(v)}" stroke="#333" stroke-width="1"/>
-      <text x="${padL-6}" y="${y(v)+3.5}" fill="#9FAEC4" font-size="9" text-anchor="end">${v.toFixed(1)}</text>`;
+    return `<line x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W-padR}" y2="${y(v).toFixed(1)}"
+      stroke="#2A2A2A" stroke-width="1"/>
+      <text x="${padL-8}" y="${(y(v)+4).toFixed(1)}" fill="#7C8AA0" font-size="11" text-anchor="end">${v.toFixed(1)}</text>`;
   }).join("");
 
-  const firstDate=games.find(g=>g[stat]!=null)?.date||"";
-  const lastDate=[...games].reverse().find(g=>g[stat]!=null)?.date||"";
+  // Month markers along the bottom.
+  let lastMonth="";
+  const monthTicks=pts.map((g,i)=>{
+    const m=(g.date||"").slice(0,7);
+    if(m && m!==lastMonth){
+      lastMonth=m;
+      const d=new Date(g.date+"T00:00:00");
+      const nm=isNaN(d)?m:d.toLocaleString([], {month:"short"});
+      return `<line x1="${x(i).toFixed(1)}" y1="${padT}" x2="${x(i).toFixed(1)}" y2="${H-padB}"
+        stroke="#242424" stroke-width="1"/>
+        <text x="${x(i).toFixed(1)}" y="${H-padB+18}" fill="#7C8AA0" font-size="11" text-anchor="middle">${nm}</text>`;
+    }
+    return "";
+  }).join("");
+
+  const current=roll[roll.length-1];
+  const above=current>line;
 
   return `<div class="chartwrap">
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
-      ${ticks}
-      <line x1="${padL}" y1="${y(line)}" x2="${W-padR}" y2="${y(line)}"
-        stroke="#FFB627" stroke-width="1.5" stroke-dasharray="5 4"/>
-      <text x="${W-padR}" y="${y(line)-5}" fill="#FFB627" font-size="10" text-anchor="end">line ${line}</text>
-      <path d="${rollPath}" fill="none" stroke="#FFFFFF" stroke-width="2.2"/>
+      <defs><clipPath id="${uid}"><path d="${area}"/></clipPath></defs>
+      ${grid}
+      ${monthTicks}
+      <rect x="${padL}" y="${padT}" width="${W-padL-padR}" height="${(yLine-padT).toFixed(1)}"
+        fill="#3C6E47" opacity=".38" clip-path="url(#${uid})"/>
+      <rect x="${padL}" y="${yLine.toFixed(1)}" width="${W-padL-padR}" height="${(H-padB-yLine).toFixed(1)}"
+        fill="#E4573D" opacity=".32" clip-path="url(#${uid})"/>
+      <line x1="${padL}" y1="${yLine.toFixed(1)}" x2="${W-padR}" y2="${yLine.toFixed(1)}"
+        stroke="#FFB627" stroke-width="2"/>
+      <text x="${padL+4}" y="${(yLine-7).toFixed(1)}" fill="#FFB627" font-size="12" font-weight="600">line ${line}</text>
       ${dots}
-      <text x="${padL}" y="${H-8}" fill="#9FAEC4" font-size="9">${firstDate}</text>
-      <text x="${W-padR}" y="${H-8}" fill="#9FAEC4" font-size="9" text-anchor="end">${lastDate}</text>
+      <path d="${roll.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("")}"
+        fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linejoin="round"/>
+      <circle cx="${x(n-1).toFixed(1)}" cy="${y(current).toFixed(1)}" r="4.5"
+        fill="${above?"#4E8C5B":"#E4573D"}" stroke="#FFF" stroke-width="1.6"/>
     </svg>
   </div>
   <div class="legend">
-    <span><span class="swatch" style="background:#FFFFFF"></span>${windowSize}-game rolling average</span>
+    <span style="color:${above?"#4E8C5B":"#E4573D"};font-weight:600">
+      Trending ${above?"above":"below"} the line — ${windowSize}-game average now ${current.toFixed(2)}</span>
+    <span><span class="swatch" style="background:#FFFFFF"></span>${windowSize}-game average</span>
     <span><span class="swatch" style="background:#FFB627"></span>prop line</span>
-    <span><span class="swatch" style="background:#3C6E47;height:8px;width:8px;border-radius:99px"></span>cleared</span>
-    <span><span class="swatch" style="background:#E4573D;height:8px;width:8px;border-radius:99px"></span>missed</span>
+    ${showDots?`<span><span class="swatch" style="height:8px;width:8px;border-radius:99px;background:#4E8C5B"></span>individual games</span>`:`<span>${n} games — individual dots hidden for clarity</span>`}
   </div>`;
 }
 
@@ -838,7 +881,7 @@ function renderProp(){
 
     <div class="card" style="margin-bottom:1rem">
       <div class="section-title">${label.toUpperCase()} — SEASON TREND</div>
-      ${lineChart(games, stat, line, 10)}
+      ${lineChart(games, stat, line, Number(document.getElementById('smoothPick').value)||10)}
     </div>
 
     <details class="fold">
