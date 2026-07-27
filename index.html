@@ -136,7 +136,10 @@
       <div class="field"><label>PLAYER</label><select id="playerPick"><option value="">— pick a team first —</option></select></div>
       <div class="field"><label>STAT</label><select id="statPick"></select></div>
       <div class="field"><label>PROP LINE</label><input type="number" id="linePick" value="1.5" step="0.5" min="0"></div>
-      <div class="field"><label>ODDS (AMERICAN)</label><input type="number" id="oddsPick" value="-110" step="5" placeholder="-110"></div>
+      <div class="field"><label>ODDS FORMAT</label>
+        <select id="oddsFmt"><option value="american">American (-110)</option><option value="decimal">Decimal (1.91)</option></select></div>
+      <div class="field"><label id="oddsLabel">ODDS</label>
+        <input type="number" id="oddsPick" value="-110" step="5" placeholder="-110"></div>
     </div>
     <div class="status" style="border-top:1px solid var(--line)">
       <span class="dot" id="propDot"></span><span id="propText">Pick a team to start.</span>
@@ -431,6 +434,30 @@ statPick.onchange=renderProp;
 linePick.oninput=renderProp;
 document.getElementById("oddsPick").oninput=renderProp;
 
+// Switching format converts whatever is already typed, rather than leaving a
+// nonsense value like "-110" sitting in a decimal field.
+document.getElementById("oddsFmt").onchange=function(){
+  const box=document.getElementById("oddsPick");
+  const lbl=document.getElementById("oddsLabel");
+  const toDecimal = this.value==="decimal";
+  const current=Number(box.value);
+  if(Number.isFinite(current) && current!==0){
+    if(toDecimal){
+      const d=americanToDecimal(current);
+      if(d!=null) box.value=d;
+    } else {
+      const a=decimalToAmerican(current);
+      if(a!=null) box.value=a;
+    }
+  }
+  box.step = toDecimal ? "0.01" : "5";
+  box.min  = toDecimal ? "1.01" : "";
+  box.placeholder = toDecimal ? "1.91" : "-110";
+  lbl.textContent = toDecimal ? "ODDS (DECIMAL)" : "ODDS (AMERICAN)";
+  renderProp();
+};
+document.getElementById("oddsLabel").textContent="ODDS (AMERICAN)";
+
 // Which hand did the opposing starter throw with, and did the batter have the platoon edge?
 function handContext(game, playerId){
   if(!PITCHERS || !game.gamePk) return null;
@@ -473,20 +500,56 @@ function buildSplitCards(buckets, stat, line, be){
   }).join("");
 }
 
+// Odds format conversion. Decimal includes your stake; American doesn't.
+// -110 American = 1.91 decimal. +180 American = 2.80 decimal.
+function decimalToAmerican(d){
+  const x=Number(d);
+  if(!Number.isFinite(x) || x<=1) return null;
+  return x>=2 ? Math.round((x-1)*100) : Math.round(-100/(x-1));
+}
+function americanToDecimal(a){
+  const x=Number(a);
+  if(!Number.isFinite(x) || x===0) return null;
+  return +(x>0 ? 1+x/100 : 1+100/(-x)).toFixed(2);
+}
+// Read the box in whatever format is selected, without lossy round-tripping.
+// Decimal is the cleaner unit for maths: break-even is simply 1/decimal, and
+// profit per unit staked is (decimal - 1).
+function currentPrice(){
+  const raw=Number(document.getElementById("oddsPick").value);
+  const fmt=document.getElementById("oddsFmt").value;
+  if(!Number.isFinite(raw) || raw===0) return null;
+  if(fmt==="decimal"){
+    if(raw<=1) return null;
+    return { decimal: raw, american: decimalToAmerican(raw), fmt };
+  }
+  return { decimal: americanToDecimalExact(raw), american: raw, fmt };
+}
+// Unrounded, for the maths.
+function americanToDecimalExact(a){
+  const x=Number(a);
+  if(!Number.isFinite(x) || x===0) return null;
+  return x>0 ? 1+x/100 : 1+100/(-x);
+}
+// How the price should read back to the user, in their chosen format.
+function displayOdds(price){
+  if(!price) return "—";
+  if(price.fmt==="decimal") return price.decimal.toFixed(2);
+  return price.american>0 ? "+"+price.american : ""+price.american;
+}
+
 // American odds -> the win rate you need just to break even.
 // -300 means risking 300 to win 100, so you need 300/(300+100) = 75%.
 // +180 means risking 100 to win 180, so you need 100/(100+180) = 35.7%.
-function breakEven(american){
-  const o=Number(american);
-  if(!Number.isFinite(o) || o===0) return null;
-  return o<0 ? (-o)/((-o)+100) : 100/(100+o);
+function breakEven(price){
+  if(!price?.decimal) return null;
+  return 1/price.decimal;
 }
 
 // What one unit staked returns on average at this hit rate and price.
-function edgePerUnit(hitRate, american){
-  const o=Number(american);
-  if(!Number.isFinite(o) || o===0) return null;
-  const profit = o<0 ? 100/(-o) : o/100;   // profit per 1 unit risked on a win
+function edgePerUnit(hitRate, price){
+  if(!price?.decimal) return null;
+  const profit = price.decimal - 1;  // profit per 1 unit staked on a win
   return hitRate*profit - (1-hitRate);
 }
 
@@ -507,8 +570,9 @@ function renderProp(){
   const group=CURRENT_LOG.group;
   const games=CURRENT_LOG.games;
 
-  const odds=document.getElementById("oddsPick").value;
-  const be=breakEven(odds);
+  const price=currentPrice();
+  const be=breakEven(price);
+  const oddsShown=displayOdds(price);
 
   // Season rate is the one with enough games behind it to compare to a price.
   const seasonSlice=games.filter(g=>g[stat]!=null);
@@ -518,7 +582,7 @@ function renderProp(){
   let verdictBlock="";
   if(be!=null && seasonRate!=null){
     const gap=(seasonRate-be)*100;
-    const edge=edgePerUnit(seasonRate,odds);
+    const edge=edgePerUnit(seasonRate,price);
     const cls = gap>2 ? "vgood" : gap < -2 ? "vbad" : "vflat";
     const col = gap>2 ? "var(--grass)" : gap < -2 ? "var(--red)" : "var(--amber)";
     const headline = gap>2
@@ -533,7 +597,7 @@ function renderProp(){
         <div><div class="stat-label">SEASON HIT RATE</div>
           <div class="gapnum">${(seasonRate*100).toFixed(1)}%</div>
           <div class="rate-sub">${seasonOver}/${seasonSlice.length} games</div></div>
-        <div><div class="stat-label">BREAK-EVEN AT ${odds>0?"+"+odds:odds}</div>
+        <div><div class="stat-label">BREAK-EVEN AT ${oddsShown}</div>
           <div class="gapnum">${(be*100).toFixed(1)}%</div>
           <div class="rate-sub">needed just to stay level</div></div>
         <div><div class="stat-label">GAP</div>
@@ -541,7 +605,7 @@ function renderProp(){
           <div class="rate-sub">${edge>=0?"+":""}${(edge*100).toFixed(1)}% per unit staked</div></div>
       </div>
       <div class="verdict-line">
-        A high hit rate is not the same as a good bet. At ${odds>0?"+"+odds:odds} you must win
+        A high hit rate is not the same as a good bet. At ${oddsShown} you must win
         <strong>${(be*100).toFixed(1)}%</strong> of the time simply to break even. This compares
         what already happened against that bar — it is not a prediction, the sample is one
         season, and the price you actually get may differ.
@@ -677,7 +741,7 @@ function renderProp(){
     <div class="card" style="padding:1.1rem;margin-bottom:1rem">
       <div style="font-family:Oswald,sans-serif;font-size:1.5rem;font-weight:700">${CURRENT_LOG.player.name}</div>
       <div style="color:var(--dim);font-size:.8rem">${CURRENT_LOG.player.team||""} · ${CURRENT_LOG.player.position||""} · ${CURRENT_LOG.season} season</div>
-      <div style="color:var(--amber);font-family:Oswald,sans-serif;margin-top:.4rem">${label} — over ${line} at ${odds>0?"+"+odds:odds}</div>
+      <div style="color:var(--amber);font-family:Oswald,sans-serif;margin-top:.4rem">${label} — over ${line} at ${oddsShown}</div>
     </div>
 
     ${verdictBlock}
