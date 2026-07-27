@@ -459,7 +459,7 @@ function parkContext(game){
 }
 
 // Build a row of comparison cards from a set of named game buckets.
-function splitCards(buckets, stat, line, be){
+function buildSplitCards(buckets, stat, line, be){
   return buckets.map(([name, slice, sub])=>{
     const clean=slice.filter(g=>g[stat]!=null);
     if(!clean.length) return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
@@ -619,7 +619,7 @@ function renderProp(){
       const batsLabel = bats==="S" ? "switch hitter" : bats==="L" ? "left-handed batter" : bats==="R" ? "right-handed batter" : "unknown";
       handBlock=`<div class="div-label">BY PITCHER HANDEDNESS
         <span style="color:var(--dim);font-weight:400;letter-spacing:0"> — ${batsLabel}</span></div>
-        <div class="rates">${splitCards([
+        <div class="rates">${buildSplitCards([
           ["vs LHP", vsL, ""], ["vs RHP", vsR, ""],
           ["Platoon edge", adv, ""], ["No edge", dis, ""]
         ], stat, line, be)}</div>`;
@@ -632,7 +632,7 @@ function renderProp(){
     if(hit.length||neu.length||pit.length){
       parkBlock=`<div class="div-label">BY BALLPARK
         <span style="color:var(--dim);font-weight:400;letter-spacing:0"> — 100 is neutral; approximate figures</span></div>
-        <div class="rates">${splitCards([
+        <div class="rates">${buildSplitCards([
           ["Hitter parks (103+)", hit, ""], ["Neutral", neu, ""], ["Pitcher parks (97-)", pit, ""]
         ], stat, line, be)}</div>`;
     }
