@@ -243,7 +243,7 @@
 
 <script>
 /* ============ shared ============ */
-let TEAMS=null, CONTEXT=null, PITCHERS=null, CURRENT_LOG=null, SLATE=null;
+let TEAMS=null, CONTEXT=null, PITCHERS=null, CURRENT_LOG=null, SLATE=null, MATCH_LOG=null;
 const fmt = n => n==null ? "—" : (n>0 ? "+"+n : ""+n);
 
 const TEAM_LIST = [
@@ -1166,19 +1166,95 @@ batterPick.onchange=async()=>{
   const pId = side==="home" ? g.away.starterId : g.home.starterId;
   mStatus("","Loading comparison…");
   try{
-    const res=await fetch(`/api/matchup?batter=${bId}&pitcher=${pId}`);
-    const data=await res.json();
-    if(!res.ok) throw new Error(data.error||"Matchup error");
+    const [mRes,lRes]=await Promise.all([
+      fetch(`/api/matchup?batter=${bId}&pitcher=${pId}`),
+      fetch(`/api/player?id=${bId}&group=hitting`)
+    ]);
+    const data=await mRes.json();
+    if(!mRes.ok) throw new Error(data.error||"Matchup error");
+    let log=null;
+    if(lRes.ok){
+      log=await lRes.json();
+      if(log?.games?.length){
+        log.games=log.games.map(gm=>({...gm,
+          hrr:(gm.hits==null||gm.runs==null||gm.rbi==null)?null:gm.hits+gm.runs+gm.rbi}));
+      }
+    }
+    MATCH_LOG=log;
     renderMatchup(data,g);
     mStatus("live",`${data.batter.name} vs ${data.pitcher.name}`);
   }catch(err){ mStatus("err","Couldn't load comparison: "+err.message); }
 };
 
-function cmpRow(label,l,r,highlight){
-  return `<div class="cmp" ${highlight?'style="background:var(--panelAlt)"':""}>
-    <div class="cmp-l">${l??"—"}</div>
-    <div class="cmp-label">${label}</div>
-    <div class="cmp-r">${r??"—"}</div>
+// winner: "batter" | "pitcher" | null. Green marks the side with the edge.
+function cmpRow(label,l,r,winner,note){
+  const lc = winner==="batter" ? "var(--grass)" : winner==="pitcher" ? "var(--red)" : "inherit";
+  const rc = winner==="pitcher" ? "var(--grass)" : winner==="batter" ? "var(--red)" : "inherit";
+  const w  = winner ? "600" : "400";
+  return `<div class="cmp">
+    <div class="cmp-l" style="color:${lc};font-weight:${w}">${l??"—"}</div>
+    <div class="cmp-label">${label}${note?`<div style="opacity:.6;font-size:.9em">${note}</div>`:""}</div>
+    <div class="cmp-r" style="color:${rc};font-weight:${w}">${r??"—"}</div>
+  </div>`;
+}
+
+// Compare two numbers where we know which direction favours the batter.
+// higherIsBatter = true  -> bigger number means batter advantage (AVG, OPS)
+// higherIsBatter = false -> bigger number means pitcher advantage (K rate)
+function edgeOf(bVal, pVal, higherIsBatter, minGap){
+  const a=Number(bVal), c=Number(pVal);
+  if(!Number.isFinite(a) || !Number.isFinite(c)) return null;
+  const gap=Math.abs(a-c);
+  if(minGap!=null && gap<minGap) return null;   // too close to call
+  if(a===c) return null;
+  const batterHigher = a>c;
+  return (batterHigher===higherIsBatter) ? "batter" : "pitcher";
+}
+
+const pct1 = v => v==null||!Number.isFinite(Number(v)) ? null : (Number(v)*100).toFixed(1)+"%";
+
+// Recent form for the batter, using the same markets as the props tab.
+function recentFormBlock(){
+  if(!MATCH_LOG?.games?.length) return "";
+  const stat=document.getElementById("formStat")?.value || "hrr";
+  const label=(HIT_STATS.find(([k])=>k===stat)||[,"Stat"])[1];
+  const games=MATCH_LOG.games.filter(g=>g[stat]!=null);
+  if(!games.length) return "";
+
+  const win=[["Last 5",5],["Last 10",10],["Last 15",15],["Season",games.length]];
+  const cards=win.map(([n,k])=>{
+    const sl=games.slice(-k);
+    const av=(sl.reduce((a,g)=>a+g[stat],0)/sl.length).toFixed(2);
+    const hi=Math.max(...sl.map(g=>g[stat]));
+    return `<div class="rate"><div class="rate-label">${n.toUpperCase()}</div>
+      <div class="rate-value" style="color:var(--amber)">${av}</div>
+      <div class="rate-sub">${sl.length} games · best ${hi}</div></div>`;
+  }).join("");
+
+  const last10=games.slice(-10);
+  const max=Math.max(...last10.map(g=>g[stat]),1);
+  const bars=last10.map(g=>{
+    const abbr=ABBR_BY_NAME[g.opponent]||shortName(g.opponent).slice(0,3).toUpperCase();
+    const d=g.date?new Date(g.date+"T00:00:00"):null;
+    const dl=d&&!isNaN(d)?d.toLocaleString([],{month:"short",day:"numeric"}):"";
+    return `<div class="gcol">
+      <div class="gbar over" style="height:${Math.max(16,Math.round(g[stat]/max*120))}px">${g[stat]}</div>
+      <div class="gmeta">${g.isHome?"":"@"}${abbr}<br>${dl}</div></div>`;
+  }).join("");
+
+  return `<div class="card" style="margin-bottom:1rem">
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;gap:1rem">
+      <span>BATTER RECENT FORM</span>
+      <select id="formStat" style="font-family:Inter,sans-serif;font-size:.8rem">
+        ${HIT_STATS.map(([k,l])=>`<option value="${k}" ${k===stat?"selected":""}>${l}</option>`).join("")}
+      </select>
+    </div>
+    <div class="rates" style="padding:1rem;margin:0">${cards}</div>
+    <div class="gchart">${bars}</div>
+    <div class="callout">
+      ${label} over the last 10 games. This is form against everyone, not against this
+      pitcher — the splits above are the matchup-specific part.
+    </div>
   </div>`;
 }
 
@@ -1190,6 +1266,26 @@ function renderMatchup(d,game){
   const advCol = adv===true ? "var(--grass)" : adv===false ? "var(--red)" : "var(--dim)";
 
   const park = game?.venueId && PITCHERS?.parks?.[game.venueId];
+
+  // Counting stats mean nothing side by side when the samples differ, so
+  // convert both to per-plate-appearance rates before comparing.
+  const bPA=Number(bSplit?.plateAppearances)||0;
+  const pBF=Number(pSplit?.battersFaced)||0;
+  const rate=(v,d)=> d>0 && v!=null ? Number(v)/d : null;
+  const bK  = rate(bSplit?.strikeOuts, bPA), pK  = rate(pSplit?.strikeOuts, pBF);
+  const bBB = rate(bSplit?.baseOnBalls, bPA), pBB = rate(pSplit?.baseOnBalls, pBF);
+  const bHR = rate(bSplit?.homeRuns, bPA),   pHR = rate(pSplit?.homeRuns, pBF);
+
+  // Tally the edges for a headline read.
+  const edges=[
+    edgeOf(bSplit?.avg,pSplit?.avg,true,0.010),
+    edgeOf(bSplit?.ops,pSplit?.ops,true,0.030),
+    edgeOf(bK,pK,false,0.015),
+    edgeOf(bBB,pBB,true,0.010),
+    edgeOf(bHR,pHR,true,0.005),
+  ].filter(Boolean);
+  const bWins=edges.filter(e=>e==="batter").length;
+  const pWins=edges.filter(e=>e==="pitcher").length;
 
   const h2h=d.h2h;
   const relCol = h2h.reliability==="moderate" ? "var(--amber)"
@@ -1219,15 +1315,21 @@ function renderMatchup(d,game){
       <div class="section-title">THE SPLIT THAT MATTERS TONIGHT
         <span style="color:var(--dim);font-size:.7rem;font-family:Inter,sans-serif;font-weight:400">
           — ${b.name} ${bSplit.label||""} · ${p.name} ${pSplit.label||""}</span></div>
-      ${cmpRow("SAMPLE", bSplit.plateAppearances?bSplit.plateAppearances+" PA":"—", pSplit.battersFaced?pSplit.battersFaced+" BF":"—")}
-      ${cmpRow("AVG", bSplit.avg, pSplit.avg, true)}
-      ${cmpRow("OPS", bSplit.ops, pSplit.ops, true)}
-      ${cmpRow("HITS", bSplit.hits, pSplit.hits)}
-      ${cmpRow("HOME RUNS", bSplit.homeRuns, pSplit.homeRuns)}
-      ${cmpRow("STRIKEOUTS", bSplit.strikeOuts, pSplit.strikeOuts)}
-      ${cmpRow("WALKS", bSplit.baseOnBalls, pSplit.baseOnBalls)}
+      ${cmpRow("SAMPLE", bSplit.plateAppearances?bSplit.plateAppearances+" PA":"—", pSplit.battersFaced?pSplit.battersFaced+" BF":"—", null)}
+      ${cmpRow("AVG", bSplit.avg, pSplit.avg, edgeOf(bSplit.avg,pSplit.avg,true,0.010), "batting vs allowed")}
+      ${cmpRow("OPS", bSplit.ops, pSplit.ops, edgeOf(bSplit.ops,pSplit.ops,true,0.030), "batting vs allowed")}
+      ${cmpRow("STRIKEOUT RATE", pct1(bK), pct1(pK), edgeOf(bK,pK,false,0.015), "K per plate appearance")}
+      ${cmpRow("WALK RATE", pct1(bBB), pct1(pBB), edgeOf(bBB,pBB,true,0.010), "BB per plate appearance")}
+      ${cmpRow("HOME RUN RATE", pct1(bHR), pct1(pHR), edgeOf(bHR,pHR,true,0.005), "HR per plate appearance")}
+      <div class="callout" style="text-align:center">
+        <span style="color:var(--grass);font-family:Oswald,sans-serif;font-size:1.05rem">${bWins}</span>
+        <span style="opacity:.7"> categories favour the batter · </span>
+        <span style="color:var(--red);font-family:Oswald,sans-serif;font-size:1.05rem">${pWins}</span>
+        <span style="opacity:.7"> favour the pitcher${edges.length<5?` · ${5-edges.length} too close to call`:""}</span>
+      </div>
       <div class="callout">
-        These are season-long splits against this handedness — typically a few hundred
+        Green marks the side with the edge in that category; grey means the gap was too
+        small to be meaningful. These are season-long splits against this handedness — typically a few hundred
         plate appearances each, which is enough to mean something. The batter's AVG and OPS
         are what he does against ${p.throws==="L"?"lefties":"righties"}; the pitcher's are
         what he allows to ${b.bats==="L"?"left":b.bats==="S"?"switch":"right"}-handed batters.
@@ -1252,18 +1354,23 @@ function renderMatchup(d,game){
       </div>
     </div>
 
+    ${recentFormBlock()}
+
     <details class="fold">
       <summary>FULL SEASON LINES</summary>
       <div class="foldbody">
-        ${cmpRow("AVG", b.season?.avg, p.season?.avg)}
-        ${cmpRow("OPS / WHIP", b.season?.ops, p.season?.whip)}
-        ${cmpRow("HR", b.season?.homeRuns, p.season?.homeRuns)}
-        ${cmpRow("K", b.season?.strikeOuts, p.season?.strikeOuts)}
-        ${cmpRow("BB", b.season?.baseOnBalls, p.season?.baseOnBalls)}
-        ${cmpRow("PA / IP", b.season?.plateAppearances, p.season?.inningsPitched)}
-        ${cmpRow("— / ERA", "—", p.season?.era)}
+        ${cmpRow("AVG", b.season?.avg, p.season?.avg, null)}
+        ${cmpRow("OPS / WHIP", b.season?.ops, p.season?.whip, null)}
+        ${cmpRow("HR", b.season?.homeRuns, p.season?.homeRuns, null)}
+        ${cmpRow("K", b.season?.strikeOuts, p.season?.strikeOuts, null)}
+        ${cmpRow("BB", b.season?.baseOnBalls, p.season?.baseOnBalls, null)}
+        ${cmpRow("PA / IP", b.season?.plateAppearances, p.season?.inningsPitched, null)}
+        ${cmpRow("— / ERA", "—", p.season?.era, null)}
       </div>
     </details>`;
+
+  const fs=document.getElementById("formStat");
+  if(fs) fs.onchange=()=>renderMatchup(d,game);
 }
 
 loadGames();
