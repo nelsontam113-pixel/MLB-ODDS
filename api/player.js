@@ -149,6 +149,7 @@ async function sendGameLog(res, id, group, season) {
       const stat = s.stat || {};
       const row = {
         date: s.date,
+        gamePk: s.game?.gamePk ?? null,
         opponent: s.opponent?.name || "",
         isHome: s.isHome === true,
       };
