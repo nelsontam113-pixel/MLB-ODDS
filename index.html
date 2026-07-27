@@ -229,8 +229,9 @@ const TEAM_LIST = [
   ["TEX","Texas Rangers"],["TOR","Toronto Blue Jays"],["WSH","Washington Nationals"]
 ];
 
-const HIT_STATS=[["hits","Hits"],["homeRuns","Home Runs"],["rbi","RBI"],["runs","Runs"],
-  ["totalBases","Total Bases"],["strikeOuts","Strikeouts"],["baseOnBalls","Walks"],
+const HIT_STATS=[["hits","Hits"],["hrr","Hits+Runs+RBIs"],["totalBases","Total Bases"],
+  ["homeRuns","Home Runs"],["rbi","RBI"],["runs","Runs"],
+  ["strikeOuts","Strikeouts"],["baseOnBalls","Walks"],
   ["stolenBases","Stolen Bases"],["doubles","Doubles"],["atBats","At Bats"]];
 const PITCH_STATS=[["strikeOuts","Strikeouts"],["inningsPitched","Innings Pitched"],
   ["hits","Hits Allowed"],["earnedRuns","Earned Runs"],["baseOnBalls","Walks"],
@@ -494,6 +495,14 @@ playerPick.onchange=async()=>{
     const res=await fetch(`/api/player?id=${id}&group=${group}`); const data=await res.json();
     if(!res.ok) throw new Error(data.error||"Log error");
     if(!data.gameCount){CURRENT_LOG=null;propStatus("err",data.note||"No games this season.");return;}
+    // Hits + Runs + RBIs is a single combined market at most books, but MLB
+    // reports the three separately, so we add them up here.
+    if(group==="hitting"){
+      data.games=data.games.map(g=>({
+        ...g,
+        hrr: (g.hits==null||g.runs==null||g.rbi==null) ? null : g.hits+g.runs+g.rbi
+      }));
+    }
     CURRENT_LOG=data;
     propStatus("live",`${data.player.name} — ${data.gameCount} games logged`);
     renderProp();
