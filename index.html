@@ -135,6 +135,9 @@
     <div class="status" style="border-top:1px solid var(--line)">
       <span class="dot" id="ctxDot"></span><span id="ctxText">Loading opponent context…</span>
     </div>
+    <div class="status" style="border-top:1px solid var(--line)">
+      <span class="dot" id="spDot"></span><span id="spText">Loading starting pitchers…</span>
+    </div>
   </div>
   <div id="propResult"></div>
 </div>
@@ -149,7 +152,7 @@
 
 <script>
 /* ============ shared ============ */
-let TEAMS=null, CONTEXT=null, CURRENT_LOG=null;
+let TEAMS=null, CONTEXT=null, PITCHERS=null, CURRENT_LOG=null;
 const fmt = n => n==null ? "—" : (n>0 ? "+"+n : ""+n);
 
 const TEAM_LIST = [
@@ -285,25 +288,78 @@ async function loadContext(){
   }catch(err){dot.className="dot err";txt.textContent="Couldn't load context: "+err.message;}
 }
 
-// How favourable was this matchup for the player?
-// Pitchers: facing a strikeout-prone lineup is soft (kRateRank 1 = most K-prone).
-// Batters:  facing a weak staff is soft (eraRank 30 = worst ERA).
-function matchupFor(opponentName, group){
-  if(!CONTEXT) return null;
-  const t=CONTEXT.teams?.[opponentName];
-  if(!t) return null;
+// ---- starting pitcher feed ----
+async function loadPitchers(){
+  const dot=document.getElementById("spDot"), txt=document.getElementById("spText");
+  try{
+    const res=await fetch("/api/pitchers"); const data=await res.json();
+    if(!res.ok) throw new Error(data.error||"Pitcher feed error");
+    PITCHERS=data;
+    dot.className="dot live";
+    txt.textContent=`Starters — ${data.gamesWithStarters}/${data.gameCount} games matched · `+
+      `league avg starter ERA ${data.leagueAvg.starterEra}, K/9 ${data.leagueAvg.starterK9}`;
+    if(CURRENT_LOG) renderProp();
+  }catch(err){dot.className="dot err";txt.textContent="Couldn't load starters: "+err.message;}
+}
+
+// Which pitcher did this player face in that game?
+function opposingStarter(game, playerTeamId){
+  if(!PITCHERS || !game.gamePk) return null;
+  const g=PITCHERS.games?.[game.gamePk];
+  if(!g) return null;
+  // The player batted for one side; the starter he faced is the other side's.
+  const side = game.isHome ? g.away : g.home;
+  if(!side?.pitcherId) return null;
+  const p=PITCHERS.pitchers?.[side.pitcherId];
+  if(!p || p.era==null) return { id:side.pitcherId, name:side.pitcherName, era:null };
+  return p;
+}
+
+// How favourable was this matchup?
+// Batters: judged on the individual starter faced, benchmarked to the league.
+// Pitchers: judged on the opposing lineup's strikeout rate.
+function matchupFor(game, group){
   if(group==="pitching"){
-    const r=t.hitting?.kRateRank;
+    if(!CONTEXT) return null;
+    const t=CONTEXT.teams?.[game.opponent];
+    const r=t?.hitting?.kRateRank;
     if(!r) return null;
-    return { rank:r, label:`K-rate #${r}`,
-             detail:`${(t.hitting.kRate*100).toFixed(1)}% strikeout rate`,
-             tier: r<=10?"soft" : r>=21?"tough" : "neutral" };
+    return { tier: r<=10?"soft" : r>=21?"tough" : "neutral",
+             headline:`${(t.hitting.kRate*100).toFixed(1)}% K-rate`,
+             sub:`#${r} of 30 · league avg ${(CONTEXT.leagueAvg.kRate*100).toFixed(1)}%`,
+             verdict: r<=10?"strikes out a lot" : r>=21?"disciplined lineup" : "about average" };
   }
-  const r=t.pitching?.eraRank;
+
+  // Batter: prefer the actual starter, fall back to the team staff.
+  const sp=opposingStarter(game, null);
+  if(sp && sp.era!=null && PITCHERS){
+    const avgEra=PITCHERS.leagueAvg.starterEra;
+    const pool=sp.starterPool||PITCHERS.leagueAvg.starterCount||1;
+    const r=sp.eraRank;
+    let tier="neutral", verdict="around league average";
+    if(r){
+      if(r<=pool/3){ tier="tough"; verdict="better than average"; }
+      else if(r>=pool*2/3){ tier="soft"; verdict="worse than average"; }
+    } else {
+      tier = sp.era>avgEra ? "soft" : "tough";
+      verdict = sp.era>avgEra ? "worse than average" : "better than average";
+    }
+    const diff=(sp.era-avgEra).toFixed(2);
+    return { tier, pitcher:sp.name,
+             headline:`${sp.name} · ${sp.era} ERA`,
+             sub:`league avg ${avgEra}${r?` · #${r} of ${pool} starters`:""} · K/9 ${sp.k9??"—"}`,
+             verdict:`${diff>0?"+":""}${diff} vs average — ${verdict}`,
+             era:sp.era, avgEra };
+  }
+
+  if(!CONTEXT) return null;
+  const t=CONTEXT.teams?.[game.opponent];
+  const r=t?.pitching?.eraRank;
   if(!r) return null;
-  return { rank:r, label:`ERA #${r}`,
-           detail:`${t.pitching.era} team ERA`,
-           tier: r>=21?"soft" : r<=10?"tough" : "neutral" };
+  return { tier: r>=21?"soft" : r<=10?"tough" : "neutral",
+           headline:`${t.pitching.era} team ERA`,
+           sub:`#${r} of 30 · league avg ${CONTEXT.leagueAvg.era} · starter unknown`,
+           verdict:"team staff only" };
 }
 
 /* ============ player props ============ */
@@ -389,7 +445,7 @@ function renderProp(){
   }).join("");
 
   // matchup splits
-  const withCtx=games.map(g=>({...g,_m:matchupFor(g.opponent,group)}));
+  const withCtx=games.map(g=>({...g,_m:matchupFor(g,group)}));
   const tiers=[["Soft matchups","soft"],["Neutral","neutral"],["Tough matchups","tough"]];
   const splitCards=CONTEXT ? tiers.map(([name,tier])=>{
     const slice=withCtx.filter(g=>g._m?.tier===tier && g[stat]!=null);
@@ -424,14 +480,45 @@ function renderProp(){
     const v=g[stat]||0;
     const h=Math.max(3,Math.round(v/max*100));
     const info=`${g.date} · ${g.isHome?"vs":"@"} ${shortName(g.opponent)} · ${label}: ${v}`+
-      (g._m?` · ${g._m.detail} (${g._m.label}, ${g._m.tier})`:"");
+      (g._m?` · vs ${g._m.headline} — ${g._m.verdict}`:"");
     return `<div class="bar ${v>line?"over":"under"}" style="height:${h}%"
       data-info="${info.replace(/"/g,"&quot;")}" data-i="${i}"></div>`;
   }).join("");
 
+  // A quick look at who he's actually been facing lately.
+  let spSummary="";
+  if(group!=="pitching" && PITCHERS){
+    const named=withCtx.slice(-10).filter(g=>g._m?.pitcher && g._m.era!=null);
+    if(named.length){
+      const avgFaced=(named.reduce((s2,g)=>s2+g._m.era,0)/named.length).toFixed(2);
+      const lg=PITCHERS.leagueAvg.starterEra;
+      const easier=avgFaced>lg;
+      spSummary=`<div class="card" style="margin-bottom:1rem">
+        <div class="section-title">WHO HE'S BEEN FACING — LAST ${named.length} STARTS SEEN</div>
+        <div class="callout" style="border-top:none">
+          Average ERA of the starters faced: <strong style="color:${easier?'var(--grass)':'var(--red)'}">${avgFaced}</strong>
+          against a league average of <strong>${lg}</strong>.
+          ${easier
+            ? "He's been seeing <strong>weaker pitching than typical</strong>, so recent numbers likely overstate his form."
+            : "He's been seeing <strong>stronger pitching than typical</strong>, so recent numbers likely understate his form."}
+        </div>
+        <div class="wrap"><table>
+          <thead><tr><th>DATE</th><th>PITCHER</th><th>ERA</th><th>VS LEAGUE AVG</th></tr></thead>
+          <tbody>${[...named].reverse().map(g=>{
+            const d=(g._m.era-PITCHERS.leagueAvg.starterEra).toFixed(2);
+            return `<tr><td style="color:var(--dim)">${g.date}</td>
+              <td>${g._m.pitcher}</td>
+              <td class="mono">${g._m.era}</td>
+              <td class="mono ${d>0?"soft":"tough"}">${d>0?"+":""}${d}</td></tr>`;
+          }).join("")}</tbody>
+        </table></div>
+      </div>`;
+    }
+  }
+
   const rows=[...withCtx].reverse();
   const keys=Object.keys(games[0]).filter(k=>!["date","opponent","isHome"].includes(k));
-  const ctxHeader = group==="pitching" ? "OPP LINEUP K-RATE" : "OPP STAFF ERA";
+  const ctxHeader = group==="pitching" ? "OPPOSING LINEUP" : "STARTING PITCHER FACED";
 
   document.getElementById("propResult").innerHTML=`
     <div class="card" style="padding:1.1rem;margin-bottom:1rem">
@@ -446,10 +533,14 @@ function renderProp(){
     ${CONTEXT?`<div class="div-label">BY MATCHUP DIFFICULTY</div>
     <div class="rates">${splitCards}</div>
     <div class="card" style="margin-bottom:1rem">${warning||`<div class="callout">
-      Matchup tiers use the opponent's season profile. ${group==="pitching"
-        ? "Soft = a lineup that strikes out a lot (top 10). Tough = a disciplined lineup (bottom 10)."
-        : "Soft = a staff with a poor ERA (bottom 10). Tough = a strong staff (top 10)."}
+      ${group==="pitching"
+        ? `Tiers use the opposing lineup's season strikeout rate. <strong>Soft</strong> = top 10 most strikeout-prone. <strong>Tough</strong> = bottom 10, a disciplined lineup. League average is ${(CONTEXT.leagueAvg.kRate*100).toFixed(1)}%.`
+        : PITCHERS
+          ? `Tiers use the <strong>individual starting pitcher faced</strong>, ranked among the ${PITCHERS.leagueAvg.starterCount} pitchers with 5+ starts. <strong>Soft</strong> = bottom third by ERA. <strong>Tough</strong> = top third. League average starter ERA is <strong>${PITCHERS.leagueAvg.starterEra}</strong>, K/9 ${PITCHERS.leagueAvg.starterK9}.`
+          : `Starting pitcher data unavailable — falling back to team staff ERA.`}
       </div>`}</div>`:""}
+
+    ${spSummary}
 
     <div class="card" style="margin-bottom:1rem">
       <div class="section-title">${label.toUpperCase()} — LAST ${recent.length} GAMES</div>
@@ -468,7 +559,7 @@ function renderProp(){
           <td style="color:var(--dim)">${g.date}</td>
           <td>${g.isHome?"vs":"@"} ${shortName(g.opponent)}</td>
           <td class="${g._m?(g._m.tier==="soft"?"soft":g._m.tier==="tough"?"tough":"neutralM"):"neutralM"}">
-            ${g._m?g._m.detail+" ("+g._m.label+")":"—"}</td>
+            ${g._m?`${g._m.headline}<div style="font-size:.68rem;opacity:.75;font-weight:400">${g._m.sub}</div>`:"—"}</td>
           ${keys.map(k=>`<td class="mono" style="${k===stat?'color:var(--amber);font-weight:600':''}">${g[k]??"—"}</td>`).join("")}
         </tr>`).join("")}</tbody>
       </table></div>
@@ -508,6 +599,7 @@ function shortName(n){
 loadGames();
 loadOdds();
 loadContext();
+loadPitchers();
 </script>
 </body>
 </html>
