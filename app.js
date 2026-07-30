@@ -586,6 +586,12 @@ function currentPrice(){
     if(raw<=1) return null;
     return { decimal: raw, american: decimalToAmerican(raw), fmt };
   }
+  // American odds are never between -100 and +100. A value like 1.64 here
+  // almost certainly means decimal odds were typed with the wrong format set.
+  if(Math.abs(raw) < 100){
+    return { decimal: americanToDecimalExact(raw), american: raw, fmt,
+             formatWarning: `${raw} is not a valid American price — did you mean decimal ${raw>1?raw.toFixed(2):"?"}? Switch the format dropdown.` };
+  }
   return { decimal: americanToDecimalExact(raw), american: raw, fmt };
 }
 // Unrounded, for the maths.
@@ -667,7 +673,12 @@ function renderProp(){
   const seasonRate=seasonAgg?seasonAgg.rate:null;
 
   let verdictBlock="";
-  if(be!=null && seasonRate!=null){
+  if(price?.formatWarning){
+    verdictBlock=`<div class="verdict vbad">
+      <div class="verdict-head" style="color:var(--red)">Check the odds format</div>
+      <div class="verdict-line">${price.formatWarning}</div>
+    </div>`;
+  } else if(be!=null && seasonRate!=null){
     const gap=(seasonRate-be)*100;
     const edge=edgePerUnit(seasonRate,price);
     const cls = gap>2 ? "vgood" : gap < -2 ? "vbad" : "vflat";
@@ -703,14 +714,12 @@ function renderProp(){
   // recency windows
   const windows=[["Last 5",5],["Last 10",10],["Last 15",15],["Season",games.length]];
   const rateCards=windows.map(([name,n])=>{
-    const slice=games.slice(-n).filter(g=>g[stat]!=null);
-    if(!slice.length) return "";
-    const over=slice.filter(g=>g[stat]>line).length;
-    const pct=Math.round(over/slice.length*100);
-    const av=(slice.reduce((s,g)=>s+g[stat],0)/slice.length).toFixed(2);
+    const agg=rateOf(games.slice(-n), stat, line, side);
+    if(!agg) return "";
+    const pct=Math.round(agg.rate*100);
     return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
       <div class="rate-value ${rateClass(pct,be)}">${pct}%</div>
-      <div class="rate-sub">${over}/${slice.length} over · avg ${av}</div></div>`;
+      <div class="rate-sub">${agg.won}/${agg.n} ${sideLabel} · avg ${agg.avg}</div></div>`;
   }).join("");
 
   // matchup splits
@@ -721,15 +730,13 @@ function renderProp(){
     _p:parkContext(g)}));
   const tiers=[["Soft matchups","soft"],["Neutral","neutral"],["Tough matchups","tough"]];
   const splitCards=CONTEXT ? tiers.map(([name,tier])=>{
-    const slice=withCtx.filter(g=>g._m?.tier===tier && g[stat]!=null);
-    if(!slice.length) return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
+    const agg=rateOf(withCtx.filter(g=>g._m?.tier===tier), stat, line, side);
+    if(!agg) return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
       <div class="rate-value neutralM">—</div><div class="rate-sub">no games</div></div>`;
-    const over=slice.filter(g=>g[stat]>line).length;
-    const pct=Math.round(over/slice.length*100);
-    const av=(slice.reduce((s,g)=>s+g[stat],0)/slice.length).toFixed(2);
+    const pct=Math.round(agg.rate*100);
     return `<div class="rate"><div class="rate-label">${name.toUpperCase()}</div>
       <div class="rate-value ${rateClass(pct,be)}">${pct}%</div>
-      <div class="rate-sub">${over}/${slice.length} over · avg ${av}</div></div>`;
+      <div class="rate-sub">${agg.won}/${agg.n} ${sideLabel} · avg ${agg.avg}</div></div>`;
   }).join("") : "";
 
   // how many of the recent 5 came against soft matchups?
