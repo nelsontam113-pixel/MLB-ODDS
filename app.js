@@ -19,9 +19,9 @@ const HIT_STATS=[["hits","Hits"],["hrr","Hits+Runs+RBIs"],["totalBases","Total B
   ["homeRuns","Home Runs"],["rbi","RBI"],["runs","Runs"],
   ["strikeOuts","Strikeouts"],["baseOnBalls","Walks"],
   ["stolenBases","Stolen Bases"],["doubles","Doubles"],["atBats","At Bats"]];
-const PITCH_STATS=[["strikeOuts","Strikeouts"],["inningsPitched","Innings Pitched"],
-  ["hits","Hits Allowed"],["earnedRuns","Earned Runs"],["baseOnBalls","Walks"],
-  ["numberOfPitches","Pitch Count"],["battersFaced","Batters Faced"]];
+const PITCH_STATS=[["strikeOuts","Strikeouts"],["outs","Pitcher Outs"],
+  ["inningsPitched","Innings Pitched"],["hits","Hits Allowed"],["earnedRuns","Earned Runs"],
+  ["baseOnBalls","Walks"],["numberOfPitches","Pitch Count"],["battersFaced","Batters Faced"]];
 
 /* ============ tabs ============ */
 const TABS=[["tabGames","viewGames"],["tabProps","viewProps"],["tabMatch","viewMatch"]];
@@ -350,6 +350,9 @@ playerPick.onchange=async()=>{
         hrr: (g.hits==null||g.runs==null||g.rbi==null) ? null : g.hits+g.runs+g.rbi
       }));
     }
+    if(group==="pitching"){
+      data.games=data.games.map(g=>({ ...g, outs: inningsToOuts(g.inningsPitched) }));
+    }
     CURRENT_LOG=data;
     propStatus("live",`${data.player.name} — ${data.gameCount} games logged`);
     renderProp();
@@ -633,6 +636,19 @@ function rateClass(p, be){
 
 // Over or under? Everything downstream reads from this so nothing has to be
 // inverted by hand — that was the main source of mistakes.
+// MLB writes innings as 6.2 = "6 innings and 2 outs" = 20 outs.
+// The digit after the point counts outs, it is not a decimal fraction —
+// so 6.2 innings is 20 outs, not 18.6.
+function inningsToOuts(ip){
+  if(ip==null) return null;
+  const n=Number(ip);
+  if(!Number.isFinite(n)) return null;
+  const whole=Math.floor(n);
+  const part=Math.round((n-whole)*10);   // 0, 1 or 2
+  if(part>2) return null;                // shouldn't happen; guard anyway
+  return whole*3+part;
+}
+
 function currentSide(){
   return document.getElementById("sidePickOU")?.value === "under" ? "under" : "over";
 }
